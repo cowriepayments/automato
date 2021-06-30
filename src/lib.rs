@@ -90,10 +90,10 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                 }
 
                 impl Machine<#state_name> {
-                    pub fn #event(self) -> Machine<#next_state_name> {
+                    pub fn #event(self) -> State {
                         let next: Machine<#next_state_name> = self.into();
                         Machine::<#next_state_name>::announce();
-                        next
+                        State::#next_state_name(next)
                     }
                 }
             }
@@ -102,6 +102,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
         quote! {
             #a
 
+            #[derive(Clone, Copy)]
             pub struct #state_name {}
 
             impl Machine<#state_name> {
@@ -124,12 +125,14 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
 
     let tokens = quote!{
         pub mod #module_name {
+            #[derive(Clone, Copy)]
             pub struct Machine<S> {
                 state: S
             }
 
             #state_structs
 
+            #[derive(Clone, Copy)]
             pub enum State {
                 #(#state_names(Machine<#state_names>)),*
             }
