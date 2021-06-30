@@ -2,7 +2,7 @@ use proc_macro::TokenStream;
 use syn::{ braced, token, parse_macro_input, Ident, Result, Token };
 use syn::parse::{ Parse, ParseStream };
 use syn::punctuated::Punctuated;
-use quote::{ quote, format_ident };
+use quote::{ quote };
 
 struct Machine {
     name: Ident,
@@ -64,9 +64,9 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
     let module_name = &machine.name;
     let state_names = machine.states.iter().map(|x| &x.name);
     let state_names_copy = machine.states.iter().map(|x| &x.name);
+    
     let state_structs = machine.states.iter().fold(quote!(), |a, b| {
-        let state_name = format_ident!("{}", b.name);
-
+        let state_name = &b.name;
         let transitions = b.transitions.iter().fold(quote!(), |a, b| {
             // ensure next state is defined as a state
             if let Some(_) = machine.states.iter().find(|x| x.name == b.next_state) {
@@ -74,7 +74,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                 panic!("undefined state referenced as next state")
             }
 
-            let next_state_name = format_ident!("{}", b.next_state);
+            let next_state_name = &b.next_state;
             let event = &b.event;
 
             quote! {
