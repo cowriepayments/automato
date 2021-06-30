@@ -60,10 +60,13 @@ impl Parse for StateTransition {
 #[proc_macro]
 pub fn statemachine(input: TokenStream) -> TokenStream {
     let machine: Machine = parse_macro_input!(input as Machine);
-    
-    let states = machine.states.iter().fold(quote!(), |a, b| {
+
+    let module_name = &machine.name;
+    let state_names = machine.states.iter().map(|x| &x.name);
+    let state_names_copy = machine.states.iter().map(|x| &x.name);
+    let state_structs = machine.states.iter().fold(quote!(), |a, b| {
         let state_name = format_ident!("{}", b.name);
-        
+
         let transitions = b.transitions.iter().fold(quote!(), |a, b| {
             // ensure next state is defined as a state
             if let Some(_) = machine.states.iter().find(|x| x.name == b.next_state) {
@@ -89,7 +92,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                 impl Machine<#state_name> {
                     pub fn #event(self) -> Machine<#next_state_name> {
                         let next: Machine<#next_state_name> = self.into();
-                        next.announce();
+                        Machine::<#next_state_name>::announce();
                         next
                     }
                 }
@@ -103,13 +106,14 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
 
             impl Machine<#state_name> {
                 pub fn new() -> Self {
+                    Machine::<#state_name>::announce();
                     Machine {
                         state: #state_name {
                         }
                     }
                 }
 
-                fn announce(&self) {
+                fn announce() {
                     println!("the machine currently assumes the {} state", stringify!(#state_name));
                 }
             }
@@ -118,13 +122,24 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
         }
     });
 
-    let module_name = &machine.name;
     let tokens = quote!{
         pub mod #module_name {
-            #states
-
             pub struct Machine<S> {
                 state: S
+            }
+
+            #state_structs
+
+            pub enum State {
+                #(#state_names(Machine<#state_names>)),*,
+                CorruptedState
+            }
+
+            pub fn state_from_str(raw_state: &str) -> State {
+                match raw_state {
+                    #(stringify!(#state_names_copy) => State::#state_names_copy(Machine::<#state_names_copy>::new())),*,
+                    _ => State::CorruptedState
+                }
             }
         }
     };
