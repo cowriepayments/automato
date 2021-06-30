@@ -131,14 +131,13 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
             #state_structs
 
             pub enum State {
-                #(#state_names(Machine<#state_names>)),*,
-                CorruptedState
+                #(#state_names(Machine<#state_names>)),*
             }
 
-            pub fn state_from_str(raw_state: &str) -> State {
+            pub fn state_from_str(raw_state: &str) -> Option<State> {
                 match raw_state {
-                    #(stringify!(#state_names_copy) => State::#state_names_copy(Machine::<#state_names_copy>::new())),*,
-                    _ => State::CorruptedState
+                    #(stringify!(#state_names_copy) => Some(State::#state_names_copy(Machine::<#state_names_copy>::new()))),*,
+                    _ => None
                 }
             }
         }

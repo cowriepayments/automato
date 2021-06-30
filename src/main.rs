@@ -27,18 +27,12 @@ fn main() {
     use transaction::{ State, state_from_str };
 
     let input = "Pending";
-    match state_from_str(input) {
-        State::Pending(m) => {
-            m.submit();
-        },
-        State::Submitting(m) => {
-            m.await_submit_result();
-        },
-        State::Submitted(m) => {
-            m.accept();
-        },
-        _ => {
-            // no-op
+    if let Some(state) = state_from_str(input) {
+        match state {
+            State::Pending(m) => {
+                m.submit();
+            },
+            _ => println!("irrelevant state")
         }
     }
 }
