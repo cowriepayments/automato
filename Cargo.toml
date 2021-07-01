@@ -1,9 +1,9 @@
 [package]
-name = "statemachine"
+name = "automato"
 version = "0.1.0"
 authors = ["Umran Hussein <umran.hussein@gmail.com>"]
 edition = "2018"
-description = "A macro to generate statically checked state machines"
+description = "a crate to generate state machines enforced at compile time"
 license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
