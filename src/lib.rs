@@ -61,7 +61,7 @@ impl Parse for StateTransition {
 pub fn statemachine(input: TokenStream) -> TokenStream {
     let machine: Machine = parse_macro_input!(input as Machine);
 
-    let module_name = &machine.name;
+    let machine_name = &machine.name;
     let state_names = machine.states.iter().map(|x| &x.name);
     let state_names_copy = machine.states.iter().map(|x| &x.name);
     
@@ -80,19 +80,19 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
             quote! {
                 #a
 
-                impl From<Machine<#state_name>> for Machine<#next_state_name> {
-                    fn from(val: Machine<#state_name>) -> Machine<#next_state_name> {
-                        Machine {
+                impl From<#machine_name<#state_name>> for #machine_name<#next_state_name> {
+                    fn from(val: #machine_name<#state_name>) -> #machine_name<#next_state_name> {
+                        #machine_name {
                             state: #next_state_name {
                             }
                         }
                     }
                 }
 
-                impl Machine<#state_name> {
+                impl #machine_name<#state_name> {
                     pub fn #event(self) -> State {
-                        let next: Machine<#next_state_name> = self.into();
-                        Machine::<#next_state_name>::announce();
+                        let next: #machine_name<#next_state_name> = self.into();
+                        #machine_name::<#next_state_name>::announce();
                         State::#next_state_name(next)
                     }
                 }
@@ -105,10 +105,10 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
             #[derive(Clone, Copy)]
             pub struct #state_name {}
 
-            impl Machine<#state_name> {
+            impl #machine_name<#state_name> {
                 pub fn new() -> Self {
-                    Machine::<#state_name>::announce();
-                    Machine {
+                    #machine_name::<#state_name>::announce();
+                    #machine_name {
                         state: #state_name {
                         }
                     }
@@ -124,24 +124,22 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
     });
 
     let tokens = quote!{
-        pub mod #module_name {
-            #[derive(Clone, Copy)]
-            pub struct Machine<S> {
-                state: S
-            }
+        #[derive(Clone, Copy)]
+        pub struct #machine_name<S> {
+            state: S
+        }
 
-            #state_structs
+        #state_structs
 
-            #[derive(Clone, Copy)]
-            pub enum State {
-                #(#state_names(Machine<#state_names>)),*
-            }
+        #[derive(Clone, Copy)]
+        pub enum State {
+            #(#state_names(#machine_name<#state_names>)),*
+        }
 
-            pub fn state_from_str(raw_state: &str) -> Option<State> {
-                match raw_state {
-                    #(stringify!(#state_names_copy) => Some(State::#state_names_copy(Machine::<#state_names_copy>::new()))),*,
-                    _ => None
-                }
+        pub fn state_from_str(raw_state: &str) -> Option<State> {
+            match raw_state {
+                #(stringify!(#state_names_copy) => Some(State::#state_names_copy(#machine_name::<#state_names_copy>::new()))),*,
+                _ => None
             }
         }
     };
