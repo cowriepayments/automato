@@ -2,7 +2,7 @@ use proc_macro::TokenStream;
 use syn::{ braced, token, parse_macro_input, Ident, Result, Token };
 use syn::parse::{ Parse, ParseStream };
 use syn::punctuated::Punctuated;
-use quote::{ quote };
+use quote::quote;
 
 struct Machine {
     #[allow(dead_code)]
@@ -19,6 +19,7 @@ struct StateDefinition {
 
 struct StateTransition {
     event: Ident,
+    data_type: Option<Ident>,
     #[allow(dead_code)]
     separator: Token![=>],
     next_state: Ident
@@ -49,6 +50,10 @@ impl Parse for StateTransition {
     fn parse(input: ParseStream) -> Result<Self> {
         Ok(StateTransition {
             event: input.parse()?,
+            data_type: match input.parse() {
+                Ok(r) => Some(r),
+                Err(_) => None
+            },
             separator: input.parse()?,
             next_state: input.parse()?
         })
@@ -74,6 +79,31 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
             let next_state_name = &b.next_state;
             let event = &b.event;
 
+            let event_impl_block = match &b.data_type {
+                Some(data_type) => quote! {
+                    impl<T: OnChangeState> Machine<#state_name, T> {
+                        fn #event(self, data: #data_type) -> Result<State<T>, ()> {
+                            let next: Machine<#next_state_name, T> = self.into();
+                            match next.t.on_change_state(stringify!(#state_name), stringify!(#next_state_name), Some(data)) {
+                                Ok(_) => Ok(State::#next_state_name(next)),
+                                Err(_) => Err(())
+                            }
+                        }
+                    }
+                },
+                None => quote! {
+                    impl<T: OnChangeState> Machine<#state_name, T> {
+                        fn #event(self) -> Result<State<T>, ()> {
+                            let next: Machine<#next_state_name, T> = self.into();
+                            match next.t.on_change_state(stringify!(#state_name), stringify!(#next_state_name), Option::<()>::None) {
+                                Ok(_) => Ok(State::#next_state_name(next)),
+                                Err(_) => Err(())
+                            }
+                        }
+                    }
+                }
+            };
+
             quote! {
                 #a
 
@@ -87,13 +117,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                     }
                 }
 
-                impl<T: OnChangeState> Machine<#state_name, T> {
-                    pub fn #event(self) -> Result<State<T>, ()> {
-                        let next: Machine<#next_state_name, T> = self.into();
-                        next.t.on_change_state(stringify!(#state_name), stringify!(#next_state_name)).unwrap();
-                        State::#next_state_name(next)
-                    }
-                }
+                #event_impl_block
             }
         });
 
@@ -101,10 +125,10 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
             #a
 
             // #[derive(Clone, Copy)]
-            pub struct #state_name {}
+            struct #state_name {}
 
             impl<T: OnChangeState> Machine<#state_name, T> {
-                pub fn new(t: T) -> Self {
+                fn new(t: T) -> Self {
                     Machine {
                         state: #state_name {
                         },
@@ -118,12 +142,30 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
     });
 
     let tokens = quote!{
-        pub trait OnChangeState {
-            fn on_change_state(&self, from: &str, to: &str) -> Result<(), ()>;
+        // this is a dummy type that implements EventData
+        impl EventData for () {
+            type Data = ();
+            fn json_encode(&self) -> String {
+                unimplemented!()
+            }
+            fn json_decode(input: &str) -> Result<(), ()> {
+                unimplemented!()
+            }
+        }
+
+        trait OnChangeState {
+            fn on_change_state<T: EventData>(&self, from: &str, to: &str, data: Option<T>) -> Result<(), ()>;
+        }
+
+        trait EventData {
+            type Data;
+        
+            fn json_encode(&self) -> String;
+            fn json_decode(json: &str) -> Result<Self::Data, ()>;
         }
 
         // #[derive(Clone, Copy)]
-        pub struct Machine<S, T: OnChangeState> {
+        struct Machine<S, T: OnChangeState> {
             state: S,
             t: T
         }
@@ -131,11 +173,11 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
         #state_structs
 
         // #[derive(Clone, Copy)]
-        pub enum State<T: OnChangeState> {
+        enum State<T: OnChangeState> {
             #(#state_names(Machine<#state_names, T>)),*
         }
 
-        pub fn state_from_str<T: OnChangeState>(raw_state: &str, t: T) -> Option<State<T>> {
+        fn state_from_str<T: OnChangeState>(raw_state: &str, t: T) -> Option<State<T>> {
             match raw_state {
                 #(stringify!(#state_names_copy) => Some(State::#state_names_copy(Machine::<#state_names_copy, T>::new(t)))),*,
                 _ => None
