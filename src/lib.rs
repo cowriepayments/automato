@@ -1,11 +1,10 @@
 use proc_macro::TokenStream;
-use syn::{ braced, token, parse_macro_input, Ident, Result, Token, Type };
+use syn::{ braced, token, parse_macro_input, Ident, Result, Token };
 use syn::parse::{ Parse, ParseStream };
 use syn::punctuated::Punctuated;
 use quote::{ quote };
 
 struct Machine {
-    t: Type,
     #[allow(dead_code)]
     brace_token: token::Brace,
     states: Punctuated<StateDefinition, Token![,]>
@@ -29,7 +28,6 @@ impl Parse for Machine {
     fn parse(input: ParseStream) -> Result<Self> {
         let content;
         Ok(Machine {
-            t: input.parse()?,
             brace_token: braced!(content in input),
             states: content.parse_terminated(StateDefinition::parse)?,
         })
@@ -61,7 +59,6 @@ impl Parse for StateTransition {
 pub fn statemachine(input: TokenStream) -> TokenStream {
     let machine: Machine = parse_macro_input!(input as Machine);
 
-    let t = &machine.t;
     let state_names = machine.states.iter().map(|x| &x.name);
     let state_names_copy = machine.states.iter().map(|x| &x.name);
     
@@ -91,7 +88,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                 }
 
                 impl<T: OnChangeState> Machine<#state_name, T> {
-                    pub fn #event(self) -> State<T> {
+                    pub fn #event(self) -> Result<State<T>, ()> {
                         let next: Machine<#next_state_name, T> = self.into();
                         next.t.on_change_state(stringify!(#state_name), stringify!(#next_state_name)).unwrap();
                         State::#next_state_name(next)
