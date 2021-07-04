@@ -199,7 +199,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
 
         #state_structs
 
-        enum State<T: Listener> {
+        pub enum State<T: Listener> {
             #(#state_names(Machine<#state_names, T>)),*
         }
 
