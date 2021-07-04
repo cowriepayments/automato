@@ -13,6 +13,9 @@ struct Machine {
 struct StateDefinition {
     name: Ident,
     #[allow(dead_code)]
+    init: Option<Ident>,
+    init_data_type: Option<Ident>,
+    #[allow(dead_code)]
     brace_token: token::Brace,
     transitions: Punctuated<StateTransition, Token![,]>
 }
@@ -40,6 +43,17 @@ impl Parse for StateDefinition {
         let content;
         Ok(StateDefinition {
             name: input.parse()?,
+            init: match input.parse() {
+                Ok(r) => {
+                    assert_eq!(r, "init");
+                    Some(r)
+                },
+                Err(_) => None
+            },
+            init_data_type: match input.parse() {
+                Ok(r) => Some(r),
+                Err(_) => None
+            },
             brace_token: braced!(content in input),
             transitions: content.parse_terminated(StateTransition::parse)?,
         })
@@ -81,10 +95,10 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
 
             let event_impl_block = match &b.data_type {
                 Some(data_type) => quote! {
-                    impl<T: OnChangeState> Machine<#state_name, T> {
+                    impl<T: Listener> Machine<#state_name, T> {
                         fn #event(self, data: #data_type) -> Result<State<T>, ()> {
                             let next: Machine<#next_state_name, T> = self.into();
-                            match next.t.on_change_state(stringify!(#state_name), stringify!(#next_state_name), Some(data)) {
+                            match next.t.on_transition(stringify!(#state_name), stringify!(#next_state_name), Some(data)) {
                                 Ok(_) => Ok(State::#next_state_name(next)),
                                 Err(_) => Err(())
                             }
@@ -92,10 +106,10 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                     }
                 },
                 None => quote! {
-                    impl<T: OnChangeState> Machine<#state_name, T> {
+                    impl<T: Listener> Machine<#state_name, T> {
                         fn #event(self) -> Result<State<T>, ()> {
                             let next: Machine<#next_state_name, T> = self.into();
-                            match next.t.on_change_state(stringify!(#state_name), stringify!(#next_state_name), Option::<()>::None) {
+                            match next.t.on_transition(stringify!(#state_name), stringify!(#next_state_name), Option::<()>::None) {
                                 Ok(_) => Ok(State::#next_state_name(next)),
                                 Err(_) => Err(())
                             }
@@ -107,7 +121,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
             quote! {
                 #a
 
-                impl<T: OnChangeState> From<Machine<#state_name, T>> for Machine<#next_state_name, T> {
+                impl<T: Listener> From<Machine<#state_name, T>> for Machine<#next_state_name, T> {
                     fn from(val: Machine<#state_name, T>) -> Machine<#next_state_name, T> {
                         Machine {
                             state: #next_state_name {
@@ -121,13 +135,42 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
             }
         });
 
+        let init_impl_block = match b.init {
+            Some(_) => {
+                match &b.init_data_type {
+                    Some(data_type) => {
+                        quote! {
+                            impl<T: Listener> Machine<#state_name, T> {
+                                fn init(t: T, data: #data_type) -> Result<Self, ()> {
+                                    match t.on_init(stringify!(#state_name), Some(data)) {
+                                        Ok(_) => Ok(Self::new(t)),
+                                        Err(_) => Err(())
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    None => quote! {
+                        impl<T: Listener> Machine<#state_name, T> {
+                            fn init(t: T) -> Result<Self, ()> {
+                                match t.on_init(stringify!(#state_name), Option::<()>::None) {
+                                    Ok(_) => Ok(Self::new(t)),
+                                    Err(_) => Err(())
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            None => quote!()
+        };
+
         quote! {
             #a
 
-            // #[derive(Clone, Copy)]
             struct #state_name {}
 
-            impl<T: OnChangeState> Machine<#state_name, T> {
+            impl<T: Listener> Machine<#state_name, T> {
                 fn new(t: T) -> Self {
                     Machine {
                         state: #state_name {
@@ -137,47 +180,30 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                 }
             }
 
+            #init_impl_block
+
             #transitions
         }
     });
 
     let tokens = quote!{
-        // this is a dummy type that implements EventData
-        impl EventData for () {
-            type Data = ();
-            fn json_encode(&self) -> String {
-                unimplemented!()
-            }
-            fn json_decode(input: &str) -> Result<(), ()> {
-                unimplemented!()
-            }
+        trait Listener {
+            fn on_init<T: Serialize>(&self, to: &str, data: Option<T>) -> Result<(), ()>;
+            fn on_transition<T: Serialize>(&self, from: &str, to: &str, data: Option<T>) -> Result<(), ()>;
         }
 
-        trait OnChangeState {
-            fn on_change_state<T: EventData>(&self, from: &str, to: &str, data: Option<T>) -> Result<(), ()>;
-        }
-
-        trait EventData {
-            type Data;
-        
-            fn json_encode(&self) -> String;
-            fn json_decode(json: &str) -> Result<Self::Data, ()>;
-        }
-
-        // #[derive(Clone, Copy)]
-        struct Machine<S, T: OnChangeState> {
+        struct Machine<S, T: Listener> {
             state: S,
             t: T
         }
 
         #state_structs
 
-        // #[derive(Clone, Copy)]
-        enum State<T: OnChangeState> {
+        enum State<T: Listener> {
             #(#state_names(Machine<#state_names, T>)),*
         }
 
-        fn state_from_str<T: OnChangeState>(raw_state: &str, t: T) -> Option<State<T>> {
+        fn state_from_str<T: Listener>(raw_state: &str, t: T) -> Option<State<T>> {
             match raw_state {
                 #(stringify!(#state_names_copy) => Some(State::#state_names_copy(Machine::<#state_names_copy, T>::new(t)))),*,
                 _ => None
