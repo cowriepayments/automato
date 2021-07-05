@@ -96,7 +96,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
             let event_impl_block = match &b.data_type {
                 Some(data_type) => quote! {
                     impl<T: Listener> Machine<#state_name, T> {
-                        fn #event(self, data: #data_type) -> Result<State<T>, ()> {
+                        pub fn #event(self, data: #data_type) -> Result<State<T>, ()> {
                             let next: Machine<#next_state_name, T> = self.into();
                             match next.t.on_transition(stringify!(#state_name), stringify!(#next_state_name), Some(data)) {
                                 Ok(_) => Ok(State::#next_state_name(next)),
@@ -107,7 +107,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                 },
                 None => quote! {
                     impl<T: Listener> Machine<#state_name, T> {
-                        fn #event(self) -> Result<State<T>, ()> {
+                        pub fn #event(self) -> Result<State<T>, ()> {
                             let next: Machine<#next_state_name, T> = self.into();
                             match next.t.on_transition(stringify!(#state_name), stringify!(#next_state_name), Option::<()>::None) {
                                 Ok(_) => Ok(State::#next_state_name(next)),
@@ -141,7 +141,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                     Some(data_type) => {
                         quote! {
                             impl<T: Listener> Machine<#state_name, T> {
-                                fn init(t: T, data: #data_type) -> Result<Self, ()> {
+                                pub fn init(t: T, data: #data_type) -> Result<Self, ()> {
                                     match t.on_init(stringify!(#state_name), Some(data)) {
                                         Ok(_) => Ok(Self::new(t)),
                                         Err(_) => Err(())
@@ -152,7 +152,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                     },
                     None => quote! {
                         impl<T: Listener> Machine<#state_name, T> {
-                            fn init(t: T) -> Result<Self, ()> {
+                            pub fn init(t: T) -> Result<Self, ()> {
                                 match t.on_init(stringify!(#state_name), Option::<()>::None) {
                                     Ok(_) => Ok(Self::new(t)),
                                     Err(_) => Err(())
@@ -187,23 +187,23 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
     });
 
     let tokens = quote!{
-        trait Listener {
+        pub trait Listener {
             fn on_init<T: Serialize>(&self, to: &str, data: Option<T>) -> Result<(), ()>;
             fn on_transition<T: Serialize>(&self, from: &str, to: &str, data: Option<T>) -> Result<(), ()>;
         }
 
-        struct Machine<S, T: Listener> {
+        pub struct Machine<S, T: Listener> {
             state: S,
             t: T
         }
 
         #state_structs
 
-        enum State<T: Listener> {
+        pub enum State<T: Listener> {
             #(#state_names(Machine<#state_names, T>)),*
         }
 
-        fn state_from_str<T: Listener>(raw_state: &str, t: T) -> Option<State<T>> {
+        pub fn state_from_str<T: Listener>(raw_state: &str, t: T) -> Option<State<T>> {
             match raw_state {
                 #(stringify!(#state_names_copy) => Some(State::#state_names_copy(Machine::<#state_names_copy, T>::new(t)))),*,
                 _ => None
