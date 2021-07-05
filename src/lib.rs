@@ -168,7 +168,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
         quote! {
             #a
 
-            struct #state_name {}
+            pub struct #state_name {}
 
             impl<T: Listener> Machine<#state_name, T> {
                 fn new(t: T) -> Self {
