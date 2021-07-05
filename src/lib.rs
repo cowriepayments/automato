@@ -51,7 +51,7 @@ impl Parse for Machine {
 
 impl Parse for StateDefinition {
     fn parse(input: ParseStream) -> Result<Self> {
-        let init: bool;
+        let mut init = false;
         let name: Ident;
 
         let x: Ident = input.parse()?;
@@ -59,7 +59,6 @@ impl Parse for StateDefinition {
             init = true;
             name = input.parse()?;
         } else {
-            init = false;
             name = x;
         }
 
