@@ -1,6 +1,6 @@
 [package]
 name = "automato"
-version = "0.10.0"
+version = "0.11.0"
 authors = ["Umran Hussein <umran.hussein@gmail.com>"]
 edition = "2018"
 description = "a crate to generate state machines enforced at compile time"
