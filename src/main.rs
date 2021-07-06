@@ -8,7 +8,6 @@ struct SharedData {}
 struct AssociatedData {}
 
 struct Log {}
-
 impl Observer for Log {}
 
 statemachine! {
@@ -33,7 +32,7 @@ statemachine! {
 }
 
 fn main() {
-    let tx: Tx<Pending, Log> = Tx::init(SharedData {}, AssociatedData {}, Log {}).unwrap();
-    let tx = tx.submit(AssociatedData{});
-    let tx = tx.accept(AssociatedData{});
+    let tx = Tx::init(SharedData {}, AssociatedData {}, Log {}).unwrap();
+    let tx = tx.submit(AssociatedData{}).unwrap();
+    let tx = tx.accept(AssociatedData{}).unwrap();
 }

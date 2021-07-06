@@ -148,15 +148,17 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                 Some(a) => match shared_data_type {
                     Some(_) => quote! {
                         impl<T: Observer> #parent_name<#state_name, T> {
-                            fn #event(self, data: #a) -> #parent_name<#next_state_name, T> {
-                                #parent_name::<#next_state_name, T>::new(#next_state_name::new(data), self.data, self.observer)
+                            fn #event(self, data: #a) -> Result<#parent_name<#next_state_name, T>, ()> {
+                                self.observer.on_transition(stringify!(#state_name), stringify!(#next_state_name), Some(data))?;
+                                Ok(#parent_name::<#next_state_name, T>::new(#next_state_name::new(data), self.data, self.observer))
                             }
                         }
                     },
                     None => quote! {
                         impl<T: Observer> #parent_name<#state_name, T> {
-                            fn #event(self, data: #a) -> #parent_name<#next_state_name, T> {
-                                #parent_name::<#next_state_name, T>::new(#next_state_name::new(data), self.observer)
+                            fn #event(self, data: #a) -> Result<#parent_name<#next_state_name, T>, ()> {
+                                self.observer.on_transition(stringify!(#state_name), stringify!(#next_state_name), Some(data))?;
+                                Ok(#parent_name::<#next_state_name, T>::new(#next_state_name::new(data), self.observer))
                             }
                         }
                     }
@@ -164,15 +166,17 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                 None => match shared_data_type {
                     Some(_) => quote! {
                         impl<T: Observer> #parent_name<#state_name, T> {
-                            fn #event(self) -> #parent_name<#next_state_name, T> {
-                                #parent_name::<#next_state_name, T>::new(#next_state_name::new(), self.data, self.observer)
+                            fn #event(self) -> Result<#parent_name<#next_state_name, T>, ()> {
+                                self.observer.on_transition(stringify!(#state_name), stringify!(#next_state_name), Option::<()>::None)?;
+                                Ok(#parent_name::<#next_state_name, T>::new(#next_state_name::new(), self.data, self.observer))
                             }
                         }
                     },
                     None => quote! {
                         impl<T: Observer> #parent_name<#state_name, T> {
-                            fn #event(self) -> #parent_name<#next_state_name, T> {
-                                #parent_name::<#next_state_name, T>::new(#next_state_name::new(), self.observer)
+                            fn #event(self) -> Result<#parent_name<#next_state_name, T>, ()> {
+                                self.observer.on_transition(stringify!(#state_name), stringify!(#next_state_name), Option::<()>::None)?;
+                                Ok(#parent_name::<#next_state_name, T>::new(#next_state_name::new(), self.observer))
                             }
                         }
                     }
