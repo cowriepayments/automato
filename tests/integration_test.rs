@@ -31,8 +31,9 @@ statemachine! {
     }
 }
 
-fn main() {
+#[test]
+fn transitions() {
     let tx = Tx::init(SharedData {}, AssociatedData {}, Log {}).unwrap();
     let tx = tx.submit(AssociatedData{}).unwrap();
-    let tx = tx.accept(AssociatedData{}).unwrap();
+    tx.accept(AssociatedData{}).unwrap();
 }
