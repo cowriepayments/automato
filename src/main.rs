@@ -1,6 +1,4 @@
 use automato::statemachine;
-
-struct Tx {}
 struct SharedData {}
 
 struct AssociatedData {}
@@ -24,8 +22,10 @@ statemachine! {
         Cancelled: AssociatedData {},
         Declined: AssociatedData {}
     }
-
 }
 
 fn main() {
+    let tx: Tx<Pending> = Tx::init(SharedData {}, AssociatedData {});
+    let tx = tx.submit(AssociatedData{});
+    let tx= tx.accept(AssociatedData{});
 }
