@@ -1,20 +1,22 @@
 use proc_macro::TokenStream;
-use syn::{ braced, token, parse_macro_input, Ident, Result, Token };
+use syn::{ parse_macro_input, braced, token, Ident, Result, Token };
 use syn::parse::{ Parse, ParseStream };
 use syn::punctuated::Punctuated;
 use quote::quote;
+use std::collections::HashMap;
 
 struct Machine {
+    name: Ident,
+    shared_data_type: Option<Ident>,
     #[allow(dead_code)]
     brace_token: token::Brace,
     states: Punctuated<StateDefinition, Token![,]>
 }
 
 struct StateDefinition {
+    init: bool,
     name: Ident,
-    #[allow(dead_code)]
-    init: Option<Ident>,
-    init_data_type: Option<Ident>,
+    associated_data_type: Option<Ident>,
     #[allow(dead_code)]
     brace_token: token::Brace,
     transitions: Punctuated<StateTransition, Token![,]>
@@ -22,7 +24,6 @@ struct StateDefinition {
 
 struct StateTransition {
     event: Ident,
-    data_type: Option<Ident>,
     #[allow(dead_code)]
     separator: Token![=>],
     next_state: Ident
@@ -30,8 +31,18 @@ struct StateTransition {
 
 impl Parse for Machine {
     fn parse(input: ParseStream) -> Result<Self> {
+        let name: Ident = input.parse()?;
+        
+        let mut shared_data_type: Option<Ident> = None;
+        let colon: Result<Token![:]> = input.parse();
+        if let Ok(_) = colon {
+            shared_data_type = Some(input.parse()?);
+        }
+
         let content;
         Ok(Machine {
+            name,
+            shared_data_type,
             brace_token: braced!(content in input),
             states: content.parse_terminated(StateDefinition::parse)?,
         })
@@ -40,20 +51,28 @@ impl Parse for Machine {
 
 impl Parse for StateDefinition {
     fn parse(input: ParseStream) -> Result<Self> {
+        let mut init = false;
+        let name: Ident;
+
+        let x: Ident = input.parse()?;
+        if x == "init" {
+            init = true;
+            name = input.parse()?;
+        } else {
+            name = x;
+        }
+
+        let mut associated_data_type: Option<Ident> = None;
+        let colon: Result<Token![:]> = input.parse();
+        if let Ok(_) = colon {
+            associated_data_type = Some(input.parse()?);
+        }
+
         let content;
         Ok(StateDefinition {
-            name: input.parse()?,
-            init: match input.parse() {
-                Ok(r) => {
-                    assert_eq!(r, "init");
-                    Some(r)
-                },
-                Err(_) => None
-            },
-            init_data_type: match input.parse() {
-                Ok(r) => Some(r),
-                Err(_) => None
-            },
+            init,
+            name,
+            associated_data_type,
             brace_token: braced!(content in input),
             transitions: content.parse_terminated(StateTransition::parse)?,
         })
@@ -64,10 +83,6 @@ impl Parse for StateTransition {
     fn parse(input: ParseStream) -> Result<Self> {
         Ok(StateTransition {
             event: input.parse()?,
-            data_type: match input.parse() {
-                Ok(r) => Some(r),
-                Err(_) => None
-            },
             separator: input.parse()?,
             next_state: input.parse()?
         })
@@ -76,140 +91,229 @@ impl Parse for StateTransition {
 
 #[proc_macro]
 pub fn statemachine(input: TokenStream) -> TokenStream {
-    let machine: Machine = parse_macro_input!(input as Machine);
+    let m = parse_macro_input!(input as Machine);
 
-    let state_names = machine.states.iter().map(|x| &x.name);
-    let state_names_copy = machine.states.iter().map(|x| &x.name);
+    let mut state_data_types = HashMap::new();
+    for state in m.states.iter() {
+        if let Some(dt) = &state.associated_data_type {
+            state_data_types.insert(&state.name, dt);
+        }
+    }
+
+    let parent_name = &m.name;
+    let shared_data_type = &m.shared_data_type;
     
-    let state_structs = machine.states.iter().fold(quote!(), |a, b| {
-        let state_name = &b.name;
-        let transitions = b.transitions.iter().fold(quote!(), |a, b| {
-            // ensure next state is defined as a state
-            if let Some(_) = machine.states.iter().find(|x| x.name == b.next_state) {
-            } else {
-                panic!("undefined state referenced as next state")
-            }
+    let state_structs = m.states.iter().map(|x| {
+        let state_name = &x.name;
+        let data_type = &x.associated_data_type;
 
-            let next_state_name = &b.next_state;
-            let event = &b.event;
-
-            let event_impl_block = match &b.data_type {
-                Some(data_type) => quote! {
-                    impl<T: Listener> Machine<#state_name, T> {
-                        pub fn #event(self, data: #data_type) -> Result<State<T>, ()> {
-                            let next: Machine<#next_state_name, T> = self.into();
-                            match next.t.on_transition(stringify!(#state_name), stringify!(#next_state_name), Some(data)) {
-                                Ok(_) => Ok(State::#next_state_name(next)),
-                                Err(_) => Err(())
-                            }
-                        }
-                    }
-                },
-                None => quote! {
-                    impl<T: Listener> Machine<#state_name, T> {
-                        pub fn #event(self) -> Result<State<T>, ()> {
-                            let next: Machine<#next_state_name, T> = self.into();
-                            match next.t.on_transition(stringify!(#state_name), stringify!(#next_state_name), Option::<()>::None) {
-                                Ok(_) => Ok(State::#next_state_name(next)),
-                                Err(_) => Err(())
-                            }
-                        }
-                    }
-                }
-            };
-
-            quote! {
-                #a
-
-                impl<T: Listener> From<Machine<#state_name, T>> for Machine<#next_state_name, T> {
-                    fn from(val: Machine<#state_name, T>) -> Machine<#next_state_name, T> {
-                        Machine {
-                            state: #next_state_name {
-                            },
-                            t: val.t
-                        }
-                    }
+        match data_type {
+            Some(dt) => quote! {
+                struct #state_name {
+                    data: #dt
                 }
 
-                #event_impl_block
-            }
-        });
+                impl #state_name {
+                    fn new(data: #dt) -> Self {
+                        Self {
+                            data
+                        }
+                    }
 
-        let init_impl_block = match b.init {
-            Some(_) => {
-                match &b.init_data_type {
-                    Some(data_type) => {
-                        quote! {
-                            impl<T: Listener> Machine<#state_name, T> {
-                                pub fn init(t: T, data: #data_type) -> Result<Self, ()> {
-                                    match t.on_init(stringify!(#state_name), Some(data)) {
-                                        Ok(_) => Ok(Self::new(t)),
-                                        Err(_) => Err(())
-                                    }
-                                }
+                    fn data(&self) -> &#dt {
+                        &self.data
+                    }
+                }
+            },
+            None => quote! {
+                struct #state_name {}
+
+                impl #state_name {
+                    fn new() -> Self {
+                        Self {}
+                    }
+                }
+            }
+        }
+    });
+
+    let transitions_block = m.states.iter().fold(quote!(), |acc, x| {
+        let state_name = &x.name;
+        let transitions = x.transitions.iter().map(|y| {
+            let event = &y.event;
+            let arg = state_data_types.get(state_name);
+            let next_state_name = &y.next_state;
+            
+            match arg {
+                Some(a) => match shared_data_type {
+                    Some(_) => quote! {
+                        impl<T: Observer> #parent_name<#state_name, T> {
+                            fn #event(self, data: #a) -> Result<#parent_name<#next_state_name, T>, ()> {
+                                self.observer.on_transition(stringify!(#state_name), stringify!(#next_state_name), Some(data))?;
+                                Ok(#parent_name::<#next_state_name, T>::new(#next_state_name::new(data), self.data, self.observer))
                             }
                         }
                     },
                     None => quote! {
-                        impl<T: Listener> Machine<#state_name, T> {
-                            pub fn init(t: T) -> Result<Self, ()> {
-                                match t.on_init(stringify!(#state_name), Option::<()>::None) {
-                                    Ok(_) => Ok(Self::new(t)),
-                                    Err(_) => Err(())
+                        impl<T: Observer> #parent_name<#state_name, T> {
+                            fn #event(self, data: #a) -> Result<#parent_name<#next_state_name, T>, ()> {
+                                self.observer.on_transition(stringify!(#state_name), stringify!(#next_state_name), Some(data))?;
+                                Ok(#parent_name::<#next_state_name, T>::new(#next_state_name::new(data), self.observer))
+                            }
+                        }
+                    }
+                },
+                None => match shared_data_type {
+                    Some(_) => quote! {
+                        impl<T: Observer> #parent_name<#state_name, T> {
+                            fn #event(self) -> Result<#parent_name<#next_state_name, T>, ()> {
+                                self.observer.on_transition(stringify!(#state_name), stringify!(#next_state_name), Option::<()>::None)?;
+                                Ok(#parent_name::<#next_state_name, T>::new(#next_state_name::new(), self.data, self.observer))
+                            }
+                        }
+                    },
+                    None => quote! {
+                        impl<T: Observer> #parent_name<#state_name, T> {
+                            fn #event(self) -> Result<#parent_name<#next_state_name, T>, ()> {
+                                self.observer.on_transition(stringify!(#state_name), stringify!(#next_state_name), Option::<()>::None)?;
+                                Ok(#parent_name::<#next_state_name, T>::new(#next_state_name::new(), self.observer))
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        quote! {
+            #acc
+
+            #(#transitions)*
+        }
+    });
+
+    let parent_state_impls = m.states.iter().map(|x| {
+        let state_name = &x.name;
+        match shared_data_type {
+            Some(sdt) => {
+                let constructor = quote! {
+                    impl<T: Observer> #parent_name<#state_name, T> {
+                        fn new(state: #state_name, data: #sdt, observer: T) -> Self {
+                            Self {
+                                state,
+                                data,
+                                observer
+                            }
+                        }
+
+                        fn data(&self) -> &#sdt {
+                            &self.data
+                        }
+                    }
+                };
+
+                match x.init {
+                    false => constructor,
+                    true => match &x.associated_data_type {
+                        Some(dt) => quote! {
+                            #constructor
+    
+                            impl<T: Observer> #parent_name<#state_name, T> {
+                                fn init(data: #sdt, state_data: #dt, observer: T) -> Result<Self, ()> {
+                                    observer.on_init(stringify!(#state_name), Some(data), Some(state_data))?;
+                                    Ok(Self::new(#state_name::new(state_data), data, observer))
+                                }
+                            }
+                        },
+                        None => quote! {
+                            #constructor
+    
+                            impl<T: Observer> #parent_name<#state_name, T> {
+                                fn init(data: #sdt, observer: T) -> Result<Self, ()> {
+                                    observer.on_init(stringify!(#state_name), Some(data), Option::<()>::None)?;
+                                    Ok(Self::new(#state_name::new(), data, observer))
                                 }
                             }
                         }
                     }
                 }
             },
-            None => quote!()
-        };
+            None => {
+                let constructor = quote! {
+                    impl<T: Observer> #parent_name<#state_name, T> {
+                        fn new(state: #state_name, observer: T) -> Self {
+                            Self {
+                                state,
+                                observer
+                            }
+                        }
+                    }
+                };
 
-        quote! {
-            #a
-
-            pub struct #state_name {}
-
-            impl<T: Listener> Machine<#state_name, T> {
-                fn new(t: T) -> Self {
-                    Machine {
-                        state: #state_name {
+                match x.init {
+                    false => constructor,
+                    true => match &x.associated_data_type {
+                        Some(dt) => quote! {
+                            #constructor
+    
+                            impl<T: Observer> #parent_name<#state_name, T> {
+                                fn init(state_data: #dt, observer: T) -> Result<Self, ()> {
+                                    observer.on_init(stringify!(#state_name), Option::<()>::None, Some(state_data))?;
+                                    Ok(Self::new(#state_name::new(state_data), observer))
+                                }
+                            }
                         },
-                        t
+                        None => quote! {
+                            #constructor
+    
+                            impl<T: Observer> #parent_name<#state_name, T> {
+                                fn init(observer: T) -> Result<Self, ()> {
+                                    observer.on_init(stringify!(#state_name), Option::<()>::None, Option::<()>::None)?;
+                                    Ok(Self::new(#state_name::new(), observer))
+                                }
+                            }
+                        }
                     }
                 }
             }
-
-            #init_impl_block
-
-            #transitions
         }
     });
 
-    let tokens = quote!{
-        pub trait Listener {
-            fn on_init<T: Serialize>(&self, to: &str, data: Option<T>) -> Result<(), ()>;
-            fn on_transition<T: Serialize>(&self, from: &str, to: &str, data: Option<T>) -> Result<(), ()>;
-        }
-
-        pub struct Machine<S, T: Listener> {
-            state: S,
-            t: T
-        }
-
-        #state_structs
-
-        pub enum State<T: Listener> {
-            #(#state_names(Machine<#state_names, T>)),*
-        }
-
-        pub fn state_from_str<T: Listener>(raw_state: &str, t: T) -> Option<State<T>> {
-            match raw_state {
-                #(stringify!(#state_names_copy) => Some(State::#state_names_copy(Machine::<#state_names_copy, T>::new(t)))),*,
-                _ => None
+    let parent_struct = match shared_data_type {
+        Some(sdt) => quote! {
+            struct #parent_name<T, U: Observer> {
+                state: T,
+                data: #sdt,
+                observer: U
+            }
+        },
+        None => quote! {
+            struct #parent_name<T, U: Observer> {
+                state: T,
+                observer: U
             }
         }
     };
 
-    tokens.into()
+    let out = quote! {
+        trait Observer {
+            fn on_init<T: Serialize, U: Serialize>(&self, to: &str, data: Option<T>, state_data: Option<U>) -> Result<(), ()> {
+                println!("initializing to {}", to);
+
+                Ok(())
+            }
+            
+            fn on_transition<T: Serialize>(&self, from: &str, to: &str, data: Option<T>) -> Result<(), ()> {
+                println!("transitioning from {} to {}", from, to);
+
+                Ok(())
+            }
+        }
+
+        #parent_struct
+        #(#state_structs)*
+        #(#parent_state_impls)*
+        #transitions_block
+    };
+
+    out.into()
 }
