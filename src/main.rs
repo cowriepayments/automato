@@ -1,7 +1,15 @@
+use serde::Serialize;
 use automato::statemachine;
+
+#[derive(Serialize, Clone, Copy)]
 struct SharedData {}
 
+#[derive(Serialize, Clone, Copy)]
 struct AssociatedData {}
+
+struct Log {}
+
+impl Observer for Log {}
 
 statemachine! {
     Tx: SharedData {
@@ -25,7 +33,7 @@ statemachine! {
 }
 
 fn main() {
-    let tx: Tx<Pending> = Tx::init(SharedData {}, AssociatedData {});
+    let tx: Tx<Pending, Log> = Tx::init(SharedData {}, AssociatedData {}, Log {}).unwrap();
     let tx = tx.submit(AssociatedData{});
-    let tx= tx.accept(AssociatedData{});
+    let tx = tx.accept(AssociatedData{});
 }

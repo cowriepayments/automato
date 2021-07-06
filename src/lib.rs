@@ -147,32 +147,32 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
             match arg {
                 Some(a) => match shared_data_type {
                     Some(_) => quote! {
-                        impl #parent_name<#state_name> {
-                            fn #event(self, data: #a) -> #parent_name<#next_state_name> {
-                                #parent_name::<#next_state_name>::new(#next_state_name::new(data), self.data)
+                        impl<T: Observer> #parent_name<#state_name, T> {
+                            fn #event(self, data: #a) -> #parent_name<#next_state_name, T> {
+                                #parent_name::<#next_state_name, T>::new(#next_state_name::new(data), self.data, self.observer)
                             }
                         }
                     },
                     None => quote! {
-                        impl #parent_name<#state_name> {
-                            fn #event(self, data: #a) -> #parent_name<#next_state_name> {
-                                #parent_name::<#next_state_name>::new(#next_state_name::new(data))
+                        impl<T: Observer> #parent_name<#state_name, T> {
+                            fn #event(self, data: #a) -> #parent_name<#next_state_name, T> {
+                                #parent_name::<#next_state_name, T>::new(#next_state_name::new(data), self.observer)
                             }
                         }
                     }
                 },
                 None => match shared_data_type {
                     Some(_) => quote! {
-                        impl #parent_name<#state_name> {
-                            fn #event(self) -> #parent_name<#next_state_name> {
-                                #parent_name::<#next_state_name>::new(#next_state_name::new(), self.data)
+                        impl<T: Observer> #parent_name<#state_name, T> {
+                            fn #event(self) -> #parent_name<#next_state_name, T> {
+                                #parent_name::<#next_state_name, T>::new(#next_state_name::new(), self.data, self.observer)
                             }
                         }
                     },
                     None => quote! {
-                        impl #parent_name<#state_name> {
-                            fn #event(self) -> #parent_name<#next_state_name> {
-                                #parent_name::<#next_state_name>::new(#next_state_name::new())
+                        impl<T: Observer> #parent_name<#state_name, T> {
+                            fn #event(self) -> #parent_name<#next_state_name, T> {
+                                #parent_name::<#next_state_name, T>::new(#next_state_name::new(), self.observer)
                             }
                         }
                     }
@@ -192,12 +192,17 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
         match shared_data_type {
             Some(sdt) => {
                 let constructor = quote! {
-                    impl #parent_name<#state_name> {
-                        fn new(state: #state_name, data: #sdt) -> Self {
+                    impl<T: Observer> #parent_name<#state_name, T> {
+                        fn new(state: #state_name, data: #sdt, observer: T) -> Self {
                             Self {
                                 state,
-                                data
+                                data,
+                                observer
                             }
+                        }
+
+                        fn data(&self) -> &#sdt {
+                            &self.data
                         }
                     }
                 };
@@ -208,18 +213,20 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                         Some(dt) => quote! {
                             #constructor
     
-                            impl #parent_name<#state_name> {
-                                fn init(data: #sdt, state_data: #dt) -> Self {
-                                    Self::new(#state_name::new(state_data), data)
+                            impl<T: Observer> #parent_name<#state_name, T> {
+                                fn init(data: #sdt, state_data: #dt, observer: T) -> Result<Self, ()> {
+                                    observer.on_init(stringify!(#state_name), Some(data), Some(state_data))?;
+                                    Ok(Self::new(#state_name::new(state_data), data, observer))
                                 }
                             }
                         },
                         None => quote! {
                             #constructor
     
-                            impl #parent_name<#state_name> {
-                                fn init(data: #sdt) -> Self {
-                                    Self::new(#state_name::new(), data)
+                            impl<T: Observer> #parent_name<#state_name, T> {
+                                fn init(data: #sdt, observer: T) -> Result<Self, ()> {
+                                    observer.on_init(stringify!(#state_name), Some(data), Option::<()>::None)?;
+                                    Ok(Self::new(#state_name::new(), data, observer))
                                 }
                             }
                         }
@@ -228,10 +235,11 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
             },
             None => {
                 let constructor = quote! {
-                    impl #parent_name<#state_name> {
-                        fn new(state: #state_name) -> Self {
+                    impl<T: Observer> #parent_name<#state_name, T> {
+                        fn new(state: #state_name, observer: T) -> Self {
                             Self {
-                                state
+                                state,
+                                observer
                             }
                         }
                     }
@@ -243,18 +251,20 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                         Some(dt) => quote! {
                             #constructor
     
-                            impl #parent_name<#state_name> {
-                                fn init(state_data: #dt) -> Self {
-                                    Self::new(#state_name::new(state_data))
+                            impl<T: Observer> #parent_name<#state_name, T> {
+                                fn init(state_data: #dt, observer: T) -> Result<Self, ()> {
+                                    observer.on_init(stringify!(#state_name), Option::<()>::None, Some(state_data))?;
+                                    Ok(Self::new(#state_name::new(state_data), observer))
                                 }
                             }
                         },
                         None => quote! {
                             #constructor
     
-                            impl #parent_name<#state_name> {
-                                fn init() -> Self {
-                                    Self::new(#state_name::new())
+                            impl<T: Observer> #parent_name<#state_name, T> {
+                                fn init(observer: T) -> Result<Self, ()> {
+                                    observer.on_init(stringify!(#state_name), Option::<()>::None, Option::<()>::None)?;
+                                    Ok(Self::new(#state_name::new(), observer))
                                 }
                             }
                         }
@@ -266,19 +276,35 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
 
     let parent_struct = match shared_data_type {
         Some(sdt) => quote! {
-            struct #parent_name<T> {
+            struct #parent_name<T, U: Observer> {
                 state: T,
-                data: #sdt
+                data: #sdt,
+                observer: U
             }
         },
         None => quote! {
-            struct #parent_name<T> {
-                state: T
+            struct #parent_name<T, U: Observer> {
+                state: T,
+                observer: U
             }
         }
     };
 
     let out = quote! {
+        trait Observer {
+            fn on_init<T: Serialize, U: Serialize>(&self, to: &str, data: Option<T>, state_data: Option<U>) -> Result<(), ()> {
+                println!("initializing to {}", to);
+
+                Ok(())
+            }
+            
+            fn on_transition<T: Serialize>(&self, from: &str, to: &str, data: Option<T>) -> Result<(), ()> {
+                println!("transitioning from {} to {}", from, to);
+
+                Ok(())
+            }
+        }
+
         #parent_struct
         #(#state_structs)*
         #(#parent_state_impls)*
