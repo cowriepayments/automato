@@ -12,7 +12,7 @@ struct AssociatedData {}
 
 struct Log {}
 impl Observer for Log {
-    fn on_init<T:Serialize,U:Serialize>(&self, to: &str, data:Option<T> , state_data:Option<U>) ->Result<(),()> {
+    fn on_init<T:Serialize, U:Serialize>(&self, to: &str, data:Option<T> , state_data:Option<U>) ->Result<(),()> {
         println!("initializing to {}", to);
 
         if let Some(d) = data {
