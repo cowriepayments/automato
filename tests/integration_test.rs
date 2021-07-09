@@ -63,7 +63,7 @@ fn transitions() {
     let json_shared_data = serde_json::to_string(&shared_data).unwrap();
     let json_state_data = serde_json::to_string(&state_data).unwrap();
     let bx = restore("Pending", Some(Encoded::Json(json_shared_data)), Some(Encoded::Json(json_state_data)), Log {});
-    if let State::Pending(cx) = bx.unwrap() {
+    if let WrappedTx::Pending(cx) = bx.unwrap() {
         cx.submit(AssociatedData{}).unwrap();
     };
 }

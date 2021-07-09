@@ -103,6 +103,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
     let state_names = m.states.iter().map(|x| &x.name);
 
     let parent_name = &m.name;
+    let wrapped_type = format_ident!("{}{}", "Wrapped", parent_name);
     let shared_data_type = &m.shared_data_type;
     
     let state_structs = m.states.iter().map(|x| {
@@ -306,7 +307,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
             Some(shared_dt) => {
                 match expected_state_dt {
                     Some(state_dt) => quote! {
-                        fn #fn_name<T: Observer>(shared_d_enc: Option<Encoded>, state_d_enc: Option<Encoded>, observer: T) -> Result<State<T>, ()> {
+                        fn #fn_name<T: Observer>(shared_d_enc: Option<Encoded>, state_d_enc: Option<Encoded>, observer: T) -> Result<#wrapped_type<T>, ()> {
                             let shared_d_enc_some = shared_d_enc.ok_or(())?;
                             let shared_d: #shared_dt = match shared_d_enc_some {
                                 Encoded::Json(data) => serde_json::from_str(&data).ok().ok_or(())?,
@@ -319,11 +320,11 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                                 _ => return Err(())
                             };
 
-                            Ok(State::#state_name(#parent_name::<#state_name, T>::new(#state_name::new(state_d), shared_d, observer)))
+                            Ok(#wrapped_type::#state_name(#parent_name::<#state_name, T>::new(#state_name::new(state_d), shared_d, observer)))
                         }
                     },
                     None => quote! {
-                        fn #fn_name<T: Observer>(shared_d_enc: Option<Encoded>, state_d_enc: Option<Encoded>, observer: T) -> Result<State<T>, ()> {
+                        fn #fn_name<T: Observer>(shared_d_enc: Option<Encoded>, state_d_enc: Option<Encoded>, observer: T) -> Result<#wrapped_type<T>, ()> {
                             let shared_d_enc_some = shared_d_enc.ok_or(())?;
                             let shared_d: #shared_dt = match shared_d_enc_some {
                                 Encoded::Json(data) => serde_json::from_str(&data).ok().ok_or(())?,
@@ -334,7 +335,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                                 return Err(())
                             };
 
-                            Ok(State::#state_name(#parent_name::<#state_name, T>::new(#state_name::new(), shared_d, observer)))
+                            Ok(#wrapped_type::#state_name(#parent_name::<#state_name, T>::new(#state_name::new(), shared_d, observer)))
                         }
                     }
                 }
@@ -342,7 +343,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
             None => {
                 match expected_state_dt {
                     Some(state_dt) => quote! {
-                        fn #fn_name<T: Observer>(shared_d_enc: Option<Encoded>, state_d_enc: Option<Encoded>, observer: T) -> Result<State<T>, ()> {
+                        fn #fn_name<T: Observer>(shared_d_enc: Option<Encoded>, state_d_enc: Option<Encoded>, observer: T) -> Result<#wrapped_type<T>, ()> {
                             if shared_d_enc.is_some() {
                                 return Err(())
                             };
@@ -353,11 +354,11 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                                 _ => return Err(())
                             };
 
-                            Ok(State::#state_name(#parent_name::<#state_name, T>::new(#state_name::new(state_d), observer)))
+                            Ok(#wrapped_type::#state_name(#parent_name::<#state_name, T>::new(#state_name::new(state_d), observer)))
                         }
                     },
                     None => quote! {
-                        fn #fn_name<T: Observer>(shared_d_enc: Option<Encoded>, state_d_enc: Option<Encoded>, observer: T) -> Result<State<T>, ()> {
+                        fn #fn_name<T: Observer>(shared_d_enc: Option<Encoded>, state_d_enc: Option<Encoded>, observer: T) -> Result<#wrapped_type<T>, ()> {
                             if shared_d_enc.is_some() {
                                 return Err(())
                             };
@@ -366,7 +367,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                                 return Err(())
                             };
 
-                            Ok(State::#state_name(#parent_name::<#state_name, T>::new(#state_name::new(), observer)))
+                            Ok(#wrapped_type::#state_name(#parent_name::<#state_name, T>::new(#state_name::new(), observer)))
                         }
                     }
                 }
@@ -400,7 +401,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
         #(#parent_state_impls)*
         #transitions_block
 
-        enum State<T: Observer> {
+        enum #wrapped_type<T: Observer> {
             #(#state_names(#parent_name<#state_names, T>)),*
         }
 
@@ -410,7 +411,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
 
         #(#restore_fns)*
 
-        fn restore<T: Observer>(state_str: &str, data: Option<Encoded>, state_data: Option<Encoded>, observer: T) -> Result<State<T>, ()> {
+        fn restore<T: Observer>(state_str: &str, data: Option<Encoded>, state_data: Option<Encoded>, observer: T) -> Result<#wrapped_type<T>, ()> {
             match state_str {
                 #(#restore_arms,)*
                 _ => Err(())
