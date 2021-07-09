@@ -151,7 +151,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                 Some(a) => match shared_data_type {
                     Some(_) => quote! {
                         impl<T: Observer> #parent_name<#state_name, T> {
-                            fn #event(self, data: #a) -> Result<#parent_name<#next_state_name, T>, ()> {
+                            pub fn #event(self, data: #a) -> Result<#parent_name<#next_state_name, T>, ()> {
                                 self.observer.on_transition(stringify!(#state_name), stringify!(#next_state_name), Some(data))?;
                                 Ok(#parent_name::<#next_state_name, T>::new(#next_state_name::new(data), self.data, self.observer))
                             }
@@ -159,7 +159,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                     },
                     None => quote! {
                         impl<T: Observer> #parent_name<#state_name, T> {
-                            fn #event(self, data: #a) -> Result<#parent_name<#next_state_name, T>, ()> {
+                            pub fn #event(self, data: #a) -> Result<#parent_name<#next_state_name, T>, ()> {
                                 self.observer.on_transition(stringify!(#state_name), stringify!(#next_state_name), Some(data))?;
                                 Ok(#parent_name::<#next_state_name, T>::new(#next_state_name::new(data), self.observer))
                             }
@@ -169,7 +169,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                 None => match shared_data_type {
                     Some(_) => quote! {
                         impl<T: Observer> #parent_name<#state_name, T> {
-                            fn #event(self) -> Result<#parent_name<#next_state_name, T>, ()> {
+                            pub fn #event(self) -> Result<#parent_name<#next_state_name, T>, ()> {
                                 self.observer.on_transition(stringify!(#state_name), stringify!(#next_state_name), Option::<()>::None)?;
                                 Ok(#parent_name::<#next_state_name, T>::new(#next_state_name::new(), self.data, self.observer))
                             }
@@ -177,7 +177,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                     },
                     None => quote! {
                         impl<T: Observer> #parent_name<#state_name, T> {
-                            fn #event(self) -> Result<#parent_name<#next_state_name, T>, ()> {
+                            pub fn #event(self) -> Result<#parent_name<#next_state_name, T>, ()> {
                                 self.observer.on_transition(stringify!(#state_name), stringify!(#next_state_name), Option::<()>::None)?;
                                 Ok(#parent_name::<#next_state_name, T>::new(#next_state_name::new(), self.observer))
                             }
@@ -283,14 +283,14 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
 
     let parent_struct = match shared_data_type {
         Some(sdt) => quote! {
-            struct #parent_name<T, U: Observer> {
+            pub struct #parent_name<T, U: Observer> {
                 state: T,
                 data: #sdt,
                 observer: U
             }
         },
         None => quote! {
-            struct #parent_name<T, U: Observer> {
+            pub struct #parent_name<T, U: Observer> {
                 state: T,
                 observer: U
             }
@@ -401,11 +401,11 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
         #(#parent_state_impls)*
         #transitions_block
 
-        enum #wrapped_type<T: Observer> {
+        pub enum #wrapped_type<T: Observer> {
             #(#state_names(#parent_name<#state_names, T>)),*
         }
 
-        enum Encoded {
+        pub enum Encoded {
             Json(String)
         }
 
