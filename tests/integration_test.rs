@@ -3,10 +3,10 @@ use serde_json;
 use automato::statemachine;
 
 #[derive(Serialize, Deserialize, Clone, Copy)]
-struct TxData {}
+pub struct TxData {}
 
 #[derive(Serialize, Deserialize, Clone, Copy)]
-struct AssociatedData {}
+pub struct AssociatedData {}
 
 struct Log {}
 impl Observer for Log {
@@ -64,6 +64,8 @@ fn transitions() {
     let json_state_data = serde_json::to_string(&state_data).unwrap();
     let bx = restore("Pending", Some(Encoded::Json(json_shared_data)), Some(Encoded::Json(json_state_data)), Log {});
     if let WrappedTx::Pending(cx) = bx.unwrap() {
-        cx.submit(AssociatedData{}).unwrap();
+        let cx = cx.submit(AssociatedData{}).unwrap();
+        cx.data();
+        cx.state.data();
     };
 }

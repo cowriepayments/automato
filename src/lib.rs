@@ -112,7 +112,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
 
         match data_type {
             Some(dt) => quote! {
-                struct #state_name {
+                pub struct #state_name {
                     data: #dt
                 }
 
@@ -123,13 +123,13 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                         }
                     }
 
-                    fn data(&self) -> &#dt {
+                    pub fn data(&self) -> &#dt {
                         &self.data
                     }
                 }
             },
             None => quote! {
-                struct #state_name {}
+                pub struct #state_name {}
 
                 impl #state_name {
                     fn new() -> Self {
@@ -208,7 +208,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                             }
                         }
 
-                        fn data(&self) -> &#sdt {
+                        pub fn data(&self) -> &#sdt {
                             &self.data
                         }
                     }
@@ -284,14 +284,14 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
     let parent_struct = match shared_data_type {
         Some(sdt) => quote! {
             pub struct #parent_name<T, U: Observer> {
-                state: T,
+                pub state: T,
                 data: #sdt,
                 observer: U
             }
         },
         None => quote! {
             pub struct #parent_name<T, U: Observer> {
-                state: T,
+                pub state: T,
                 observer: U
             }
         }
@@ -382,7 +382,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
     });
 
     let out = quote! {
-        trait Observer {
+        pub trait Observer {
             fn on_init<T: Serialize, U: Serialize>(&self, to: &str, data: Option<T>, state_data: Option<U>) -> Result<(), ()> {
                 println!("initializing to {}", to);
 
