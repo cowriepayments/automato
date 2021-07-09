@@ -2,7 +2,7 @@ use proc_macro::TokenStream;
 use syn::{ parse_macro_input, braced, token, Ident, Result, Token };
 use syn::parse::{ Parse, ParseStream };
 use syn::punctuated::Punctuated;
-use quote::quote;
+use quote::{quote, format_ident};
 use std::collections::HashMap;
 
 struct Machine {
@@ -99,6 +99,8 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
             state_data_types.insert(&state.name, dt);
         }
     }
+
+    let state_names = m.states.iter().map(|x| &x.name);
 
     let parent_name = &m.name;
     let shared_data_type = &m.shared_data_type;
@@ -294,6 +296,90 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
         }
     };
 
+    let restore_fns = m.states.iter().map(|x| {
+        let state_name = &x.name;
+        let expected_state_dt = state_data_types.get(state_name);
+
+        let fn_name = format_ident!("{}_{}", "restore", state_name.to_string().to_lowercase());
+
+        match shared_data_type {
+            Some(shared_dt) => {
+                match expected_state_dt {
+                    Some(state_dt) => quote! {
+                        fn #fn_name<T: Observer>(shared_d_enc: Option<Encoded>, state_d_enc: Option<Encoded>, observer: T) -> Result<State<T>, ()> {
+                            let shared_d_enc_some = shared_d_enc.ok_or(())?;
+                            let shared_d: #shared_dt = match shared_d_enc_some {
+                                Encoded::Json(data) => serde_json::from_str(&data).ok().ok_or(())?,
+                                _ => return Err(())
+                            };
+
+                            let state_d_enc_some = state_d_enc.ok_or(())?;
+                            let state_d: #state_dt = match state_d_enc_some {
+                                Encoded::Json(data) => serde_json::from_str(&data).ok().ok_or(())?,
+                                _ => return Err(())
+                            };
+
+                            Ok(State::#state_name(#parent_name::<#state_name, T>::new(#state_name::new(state_d), shared_d, observer)))
+                        }
+                    },
+                    None => quote! {
+                        fn #fn_name<T: Observer>(shared_d_enc: Option<Encoded>, state_d_enc: Option<Encoded>, observer: T) -> Result<State<T>, ()> {
+                            let shared_d_enc_some = shared_d_enc.ok_or(())?;
+                            let shared_d: #shared_dt = match shared_d_enc_some {
+                                Encoded::Json(data) => serde_json::from_str(&data).ok().ok_or(())?,
+                                _ => return Err(())
+                            };
+
+                            if state_d_enc.is_some() {
+                                return Err(())
+                            };
+
+                            Ok(State::#state_name(#parent_name::<#state_name, T>::new(#state_name::new(), shared_d, observer)))
+                        }
+                    }
+                }
+            },
+            None => {
+                match expected_state_dt {
+                    Some(state_dt) => quote! {
+                        fn #fn_name<T: Observer>(shared_d_enc: Option<Encoded>, state_d_enc: Option<Encoded>, observer: T) -> Result<State<T>, ()> {
+                            if shared_d_enc.is_some() {
+                                return Err(())
+                            };
+
+                            let state_d_enc_some = state_d_enc.ok_or(())?;
+                            let state_d: #state_dt = match state_d_enc_some {
+                                Encoded::Json(data) => serde_json::from_str(&data).ok().ok_or(())?,
+                                _ => return Err(())
+                            };
+
+                            Ok(State::#state_name(#parent_name::<#state_name, T>::new(#state_name::new(state_d), observer)))
+                        }
+                    },
+                    None => quote! {
+                        fn #fn_name<T: Observer>(shared_d_enc: Option<Encoded>, state_d_enc: Option<Encoded>, observer: T) -> Result<State<T>, ()> {
+                            if shared_d_enc.is_some() {
+                                return Err(())
+                            };
+
+                            if state_d_enc.is_some() {
+                                return Err(())
+                            };
+
+                            Ok(State::#state_name(#parent_name::<#state_name, T>::new(#state_name::new(), observer)))
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    let restore_arms = m.states.iter().map(|x| {
+        let state_name = &x.name;
+        let fn_name = format_ident!("{}_{}", "restore", state_name.to_string().to_lowercase());
+        quote!(stringify!(#state_name) => #fn_name(data, state_data, observer))
+    });
+
     let out = quote! {
         trait Observer {
             fn on_init<T: Serialize, U: Serialize>(&self, to: &str, data: Option<T>, state_data: Option<U>) -> Result<(), ()> {
@@ -313,6 +399,23 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
         #(#state_structs)*
         #(#parent_state_impls)*
         #transitions_block
+
+        enum State<T: Observer> {
+            #(#state_names(#parent_name<#state_names, T>)),*
+        }
+
+        enum Encoded {
+            Json(String)
+        }
+
+        #(#restore_fns)*
+
+        fn restore<T: Observer>(state_str: &str, data: Option<Encoded>, state_data: Option<Encoded>, observer: T) -> Result<State<T>, ()> {
+            match state_str {
+                #(#restore_arms,)*
+                _ => Err(())
+            }
+        }
     };
 
     out.into()

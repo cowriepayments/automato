@@ -1,13 +1,11 @@
-use serde::Serialize;
+use serde::{ Serialize, Deserialize };
 use serde_json;
 use automato::statemachine;
 
-#[derive(Serialize, Clone, Copy)]
-struct TxData {
-    id: i32
-}
+#[derive(Serialize, Deserialize, Clone, Copy)]
+struct TxData {}
 
-#[derive(Serialize, Clone, Copy)]
+#[derive(Serialize, Deserialize, Clone, Copy)]
 struct AssociatedData {}
 
 struct Log {}
@@ -56,7 +54,16 @@ statemachine! {
 
 #[test]
 fn transitions() {
-    let tx = Tx::init(TxData { id: 6 }, AssociatedData {}, Log {}).unwrap();
+    let tx = Tx::init(TxData {}, AssociatedData {}, Log {}).unwrap();
     let tx = tx.submit(AssociatedData{}).unwrap();
     tx.accept(AssociatedData{}).unwrap();
+
+    let shared_data = TxData {};
+    let state_data = AssociatedData {};
+    let json_shared_data = serde_json::to_string(&shared_data).unwrap();
+    let json_state_data = serde_json::to_string(&state_data).unwrap();
+    let bx = restore("Pending", Some(Encoded::Json(json_shared_data)), Some(Encoded::Json(json_state_data)), Log {});
+    if let State::Pending(cx) = bx.unwrap() {
+        cx.submit(AssociatedData{}).unwrap();
+    };
 }
