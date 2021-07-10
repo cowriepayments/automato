@@ -8,22 +8,29 @@ pub struct TxData {}
 #[derive(Serialize, Deserialize, Clone, Copy)]
 pub struct AssociatedData {}
 
+#[derive(Debug)]
+enum LogError {
+    EncodingError
+}
+
 struct Log {}
 impl Observer for Log {
-    fn on_init<T:Serialize, U:Serialize>(&self, to: &str, data:Option<T> , state_data:Option<U>) ->Result<(),()> {
+    type Error = LogError;
+
+    fn on_init<T:Serialize, U:Serialize>(&self, to: &str, data:Option<T> , state_data:Option<U>) -> Result<(), LogError> {
         println!("initializing to {}", to);
 
         if let Some(d) = data {
             match serde_json::to_string(&d) {
                 Ok(s) => println!("{}", s),
-                Err(_) => return Err(())
+                Err(_) => return Err(LogError::EncodingError)
             };
         };
 
         if let Some(d) = state_data {
             match serde_json::to_string(&d) {
                 Ok(s) => println!("{}", s),
-                Err(_) => return Err(())
+                Err(_) => return Err(LogError::EncodingError)
             };
         };
 

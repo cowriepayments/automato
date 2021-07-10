@@ -151,7 +151,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                 Some(a) => match shared_data_type {
                     Some(_) => quote! {
                         impl<T: Observer> #parent_name<#state_name, T> {
-                            pub fn #event(self, data: #a) -> Result<#parent_name<#next_state_name, T>, ()> {
+                            pub fn #event(self, data: #a) -> Result<#parent_name<#next_state_name, T>, T::Error> {
                                 self.observer.on_transition(stringify!(#state_name), stringify!(#next_state_name), Some(data))?;
                                 Ok(#parent_name::<#next_state_name, T>::new(#next_state_name::new(data), self.data, self.observer))
                             }
@@ -159,7 +159,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                     },
                     None => quote! {
                         impl<T: Observer> #parent_name<#state_name, T> {
-                            pub fn #event(self, data: #a) -> Result<#parent_name<#next_state_name, T>, ()> {
+                            pub fn #event(self, data: #a) -> Result<#parent_name<#next_state_name, T>, T::Error> {
                                 self.observer.on_transition(stringify!(#state_name), stringify!(#next_state_name), Some(data))?;
                                 Ok(#parent_name::<#next_state_name, T>::new(#next_state_name::new(data), self.observer))
                             }
@@ -169,7 +169,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                 None => match shared_data_type {
                     Some(_) => quote! {
                         impl<T: Observer> #parent_name<#state_name, T> {
-                            pub fn #event(self) -> Result<#parent_name<#next_state_name, T>, ()> {
+                            pub fn #event(self) -> Result<#parent_name<#next_state_name, T>, T::Error> {
                                 self.observer.on_transition(stringify!(#state_name), stringify!(#next_state_name), Option::<()>::None)?;
                                 Ok(#parent_name::<#next_state_name, T>::new(#next_state_name::new(), self.data, self.observer))
                             }
@@ -177,7 +177,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                     },
                     None => quote! {
                         impl<T: Observer> #parent_name<#state_name, T> {
-                            pub fn #event(self) -> Result<#parent_name<#next_state_name, T>, ()> {
+                            pub fn #event(self) -> Result<#parent_name<#next_state_name, T>, T::Error> {
                                 self.observer.on_transition(stringify!(#state_name), stringify!(#next_state_name), Option::<()>::None)?;
                                 Ok(#parent_name::<#next_state_name, T>::new(#next_state_name::new(), self.observer))
                             }
@@ -221,7 +221,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                             #constructor
     
                             impl<T: Observer> #parent_name<#state_name, T> {
-                                fn init(data: #sdt, state_data: #dt, observer: T) -> Result<Self, ()> {
+                                fn init(data: #sdt, state_data: #dt, observer: T) -> Result<Self, T::Error> {
                                     observer.on_init(stringify!(#state_name), Some(data), Some(state_data))?;
                                     Ok(Self::new(#state_name::new(state_data), data, observer))
                                 }
@@ -231,7 +231,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                             #constructor
     
                             impl<T: Observer> #parent_name<#state_name, T> {
-                                fn init(data: #sdt, observer: T) -> Result<Self, ()> {
+                                fn init(data: #sdt, observer: T) -> Result<Self, T::Error> {
                                     observer.on_init(stringify!(#state_name), Some(data), Option::<()>::None)?;
                                     Ok(Self::new(#state_name::new(), data, observer))
                                 }
@@ -259,7 +259,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                             #constructor
     
                             impl<T: Observer> #parent_name<#state_name, T> {
-                                fn init(state_data: #dt, observer: T) -> Result<Self, ()> {
+                                fn init(state_data: #dt, observer: T) -> Result<Self, T::Error> {
                                     observer.on_init(stringify!(#state_name), Option::<()>::None, Some(state_data))?;
                                     Ok(Self::new(#state_name::new(state_data), observer))
                                 }
@@ -269,7 +269,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                             #constructor
     
                             impl<T: Observer> #parent_name<#state_name, T> {
-                                fn init(observer: T) -> Result<Self, ()> {
+                                fn init(observer: T) -> Result<Self, T::Error> {
                                     observer.on_init(stringify!(#state_name), Option::<()>::None, Option::<()>::None)?;
                                     Ok(Self::new(#state_name::new(), observer))
                                 }
@@ -383,13 +383,15 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
 
     let out = quote! {
         pub trait Observer {
-            fn on_init<T: Serialize, U: Serialize>(&self, to: &str, data: Option<T>, state_data: Option<U>) -> Result<(), ()> {
+            type Error;
+
+            fn on_init<T: Serialize, U: Serialize>(&self, to: &str, data: Option<T>, state_data: Option<U>) -> Result<(), Self::Error> {
                 println!("initializing to {}", to);
 
                 Ok(())
             }
             
-            fn on_transition<T: Serialize>(&self, from: &str, to: &str, data: Option<T>) -> Result<(), ()> {
+            fn on_transition<T: Serialize>(&self, from: &str, to: &str, data: Option<T>) -> Result<(), Self::Error> {
                 println!("transitioning from {} to {}", from, to);
 
                 Ok(())
