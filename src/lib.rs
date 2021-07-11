@@ -1,9 +1,10 @@
+use std::collections::HashMap;
 use proc_macro::TokenStream;
 use syn::{ parse_macro_input, braced, token, Ident, Result, Token };
 use syn::parse::{ Parse, ParseStream };
 use syn::punctuated::Punctuated;
 use quote::{quote, format_ident};
-use std::collections::HashMap;
+use convert_case::{Case, Casing};
 
 struct Machine {
     name: Ident,
@@ -100,7 +101,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
         }
     }
 
-    let state_names = m.states.iter().map(|x| &x.name);
+    let state_names: Vec<&Ident> = m.states.iter().map(|x| &x.name).collect();
 
     let parent_name = &m.name;
     let wrapped_type = format_ident!("{}{}", "Wrapped", parent_name);
@@ -142,25 +143,42 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
 
     let transitions_block = m.states.iter().fold(quote!(), |acc, x| {
         let state_name = &x.name;
+        let exit_fn_name = format_ident!("{}_{}", "on_exit", state_name.to_string().to_case(Case::Snake));
+
+        let exit_call = match state_data_types.get(state_name) {
+            Some(_) => quote! {
+                let old_data = self.state.data();
+                self.observer.#exit_fn_name(State::#state_name, *old_data)?;
+            },
+            None => quote! {
+                self.observer.#exit_fn_name(State::#state_name)?;
+            }
+        };
+
         let transitions = x.transitions.iter().map(|y| {
             let event = &y.event;
-            let arg = state_data_types.get(state_name);
             let next_state_name = &y.next_state;
-            
+            let arg = state_data_types.get(next_state_name);
+            let enter_fn_name = format_ident!("{}_{}", "on_enter", next_state_name.to_string().to_case(Case::Snake));
+
             match arg {
                 Some(a) => match shared_data_type {
                     Some(_) => quote! {
                         impl<T: Observer> #parent_name<#state_name, T> {
-                            pub fn #event(self, data: #a) -> Result<#parent_name<#next_state_name, T>, T::Error> {
-                                self.observer.on_transition(stringify!(#state_name), stringify!(#next_state_name), Some(data))?;
+                            pub fn #event(mut self, data: #a) -> Result<#parent_name<#next_state_name, T>, T::Error> {
+                                self.observer.on_transition(State::#state_name, State::#next_state_name, Some(data))?;
+                                #exit_call
+                                self.observer.#enter_fn_name(Some(State::#state_name), data)?;
                                 Ok(#parent_name::<#next_state_name, T>::new(#next_state_name::new(data), self.data, self.observer))
                             }
                         }
                     },
                     None => quote! {
                         impl<T: Observer> #parent_name<#state_name, T> {
-                            pub fn #event(self, data: #a) -> Result<#parent_name<#next_state_name, T>, T::Error> {
-                                self.observer.on_transition(stringify!(#state_name), stringify!(#next_state_name), Some(data))?;
+                            pub fn #event(mut self, data: #a) -> Result<#parent_name<#next_state_name, T>, T::Error> {
+                                self.observer.on_transition(State::#state_name, State::#next_state_name, Some(data))?;
+                                #exit_call
+                                self.observer.#enter_fn_name(Some(State::#state_name), data)?;
                                 Ok(#parent_name::<#next_state_name, T>::new(#next_state_name::new(data), self.observer))
                             }
                         }
@@ -169,16 +187,20 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                 None => match shared_data_type {
                     Some(_) => quote! {
                         impl<T: Observer> #parent_name<#state_name, T> {
-                            pub fn #event(self) -> Result<#parent_name<#next_state_name, T>, T::Error> {
-                                self.observer.on_transition(stringify!(#state_name), stringify!(#next_state_name), Option::<()>::None)?;
+                            pub fn #event(mut self) -> Result<#parent_name<#next_state_name, T>, T::Error> {
+                                self.observer.on_transition(State::#state_name, State::#next_state_name, Option::<()>::None)?;
+                                #exit_call
+                                self.observer.#enter_fn_name(Some(State::#state_name))?;
                                 Ok(#parent_name::<#next_state_name, T>::new(#next_state_name::new(), self.data, self.observer))
                             }
                         }
                     },
                     None => quote! {
                         impl<T: Observer> #parent_name<#state_name, T> {
-                            pub fn #event(self) -> Result<#parent_name<#next_state_name, T>, T::Error> {
-                                self.observer.on_transition(stringify!(#state_name), stringify!(#next_state_name), Option::<()>::None)?;
+                            pub fn #event(mut self) -> Result<#parent_name<#next_state_name, T>, T::Error> {
+                                self.observer.on_transition(State::#state_name, State::#next_state_name, Option::<()>::None)?;
+                                #exit_call
+                                self.observer.#enter_fn_name(Some(State::#state_name))?;
                                 Ok(#parent_name::<#next_state_name, T>::new(#next_state_name::new(), self.observer))
                             }
                         }
@@ -196,6 +218,8 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
 
     let parent_state_impls = m.states.iter().map(|x| {
         let state_name = &x.name;
+        let enter_fn_name = format_ident!("{}_{}", "on_enter", state_name.to_string().to_case(Case::Snake));
+
         match shared_data_type {
             Some(sdt) => {
                 let constructor = quote! {
@@ -221,8 +245,9 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                             #constructor
     
                             impl<T: Observer> #parent_name<#state_name, T> {
-                                fn init(data: #sdt, state_data: #dt, observer: T) -> Result<Self, T::Error> {
-                                    observer.on_init(stringify!(#state_name), Some(data), Some(state_data))?;
+                                fn init(data: #sdt, state_data: #dt, mut observer: T) -> Result<Self, T::Error> {
+                                    observer.on_init(State::#state_name, Some(data), Some(state_data))?;
+                                    observer.#enter_fn_name(None, state_data)?;
                                     Ok(Self::new(#state_name::new(state_data), data, observer))
                                 }
                             }
@@ -231,8 +256,9 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                             #constructor
     
                             impl<T: Observer> #parent_name<#state_name, T> {
-                                fn init(data: #sdt, observer: T) -> Result<Self, T::Error> {
-                                    observer.on_init(stringify!(#state_name), Some(data), Option::<()>::None)?;
+                                fn init(data: #sdt, mut observer: T) -> Result<Self, T::Error> {
+                                    observer.on_init(State::#state_name, Some(data), Option::<()>::None)?;
+                                    observer.#enter_fn_name(None)?;
                                     Ok(Self::new(#state_name::new(), data, observer))
                                 }
                             }
@@ -259,8 +285,9 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                             #constructor
     
                             impl<T: Observer> #parent_name<#state_name, T> {
-                                fn init(state_data: #dt, observer: T) -> Result<Self, T::Error> {
-                                    observer.on_init(stringify!(#state_name), Option::<()>::None, Some(state_data))?;
+                                fn init(state_data: #dt, mut observer: T) -> Result<Self, T::Error> {
+                                    observer.on_init(State::#state_name, Option::<()>::None, Some(state_data))?;
+                                    observer.#enter_fn_name(None, state_data)?;
                                     Ok(Self::new(#state_name::new(state_data), observer))
                                 }
                             }
@@ -269,8 +296,9 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                             #constructor
     
                             impl<T: Observer> #parent_name<#state_name, T> {
-                                fn init(observer: T) -> Result<Self, T::Error> {
-                                    observer.on_init(stringify!(#state_name), Option::<()>::None, Option::<()>::None)?;
+                                fn init(mut observer: T) -> Result<Self, T::Error> {
+                                    observer.on_init(State::#state_name, Option::<()>::None, Option::<()>::None)?;
+                                    observer.#enter_fn_name(None)?;
                                     Ok(Self::new(#state_name::new(), observer))
                                 }
                             }
@@ -381,21 +409,58 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
         quote!(stringify!(#state_name) => #fn_name(data, state_data, observer))
     });
 
+    let listeners = m.states.iter().map(|x| {
+        let state_name = &x.name;
+        let enter_fn_name = format_ident!("{}_{}", "on_enter", state_name.to_string().to_case(Case::Snake));
+        let exit_fn_name = format_ident!("{}_{}", "on_exit", state_name.to_string().to_case(Case::Snake));
+
+        let maybe_data_type = state_data_types.get(state_name);
+        match maybe_data_type {
+            Some(data_type) => quote! {
+                fn #enter_fn_name(&self, from: Option<State>, data: #data_type) -> Result<(), Self::Error> {
+                    Ok(())
+                }
+                fn #exit_fn_name(&self, to: State, data: #data_type) -> Result<(), Self::Error> {
+                    Ok(())
+                }
+            },
+            None => quote! {
+                fn #enter_fn_name(&self, from: Option<State>) -> Result<(), Self::Error> {
+                    Ok(())
+                }
+                fn #exit_fn_name(&self, to: State) -> Result<(), Self::Error> {
+                    Ok(())
+                }
+            }
+        }
+
+    });
+
     let out = quote! {
+        pub enum State {
+            #(#state_names),*
+        }
+
+        impl State {
+            pub fn to_string(&self) -> String {
+                match self {
+                    #(State::#state_names => String::from(stringify!(#state_names))),*
+                }
+            }
+        }
+        
         pub trait Observer {
             type Error;
 
-            fn on_init<T: Serialize, U: Serialize>(&self, to: &str, data: Option<T>, state_data: Option<U>) -> Result<(), Self::Error> {
-                println!("initializing to {}", to);
-
+            fn on_init<T: Serialize, U: Serialize>(&mut self, to: State, data: Option<T>, state_data: Option<U>) -> Result<(), Self::Error> {
                 Ok(())
             }
             
-            fn on_transition<T: Serialize>(&self, from: &str, to: &str, data: Option<T>) -> Result<(), Self::Error> {
-                println!("transitioning from {} to {}", from, to);
-
+            fn on_transition<T: Serialize>(&mut self, from: State, to: State, data: Option<T>) -> Result<(), Self::Error> {
                 Ok(())
             }
+
+            #(#listeners)*
         }
 
         #parent_struct
@@ -407,8 +472,8 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
             #(#state_names(#parent_name<#state_names, T>)),*
         }
 
-        pub enum Encoded {
-            Json(String)
+        pub enum Encoded<'a> {
+            Json(&'a str)
         }
 
         #(#restore_fns)*
