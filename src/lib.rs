@@ -145,21 +145,21 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
         let state_name = &x.name;
         let exit_fn_name = format_ident!("{}_{}", "on_exit", state_name.to_string().to_case(Case::Snake));
 
-        let exit_call = match state_data_types.get(state_name) {
-            Some(_) => quote! {
-                let old_data = self.state.data();
-                self.observer.#exit_fn_name(State::#state_name, *old_data)?;
-            },
-            None => quote! {
-                self.observer.#exit_fn_name(State::#state_name)?;
-            }
-        };
-
         let transitions = x.transitions.iter().map(|y| {
             let event = &y.event;
             let next_state_name = &y.next_state;
             let arg = state_data_types.get(next_state_name);
             let enter_fn_name = format_ident!("{}_{}", "on_enter", next_state_name.to_string().to_case(Case::Snake));
+
+            let exit_call = match state_data_types.get(state_name) {
+                Some(_) => quote! {
+                    let old_data = self.state.data();
+                    self.observer.#exit_fn_name(State::#next_state_name, *old_data)?;
+                },
+                None => quote! {
+                    self.observer.#exit_fn_name(State::#next_state_name)?;
+                }
+            };
 
             match arg {
                 Some(a) => match shared_data_type {
