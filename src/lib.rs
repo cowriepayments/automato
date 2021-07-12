@@ -245,7 +245,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                             #constructor
     
                             impl<T: Observer> #parent_name<#state_name, T> {
-                                fn init(data: #sdt, state_data: #dt, mut observer: T) -> Result<Self, T::Error> {
+                                pub fn init(data: #sdt, state_data: #dt, mut observer: T) -> Result<Self, T::Error> {
                                     observer.on_init(State::#state_name, Some(data), Some(state_data))?;
                                     observer.#enter_fn_name(None, state_data)?;
                                     Ok(Self::new(#state_name::new(state_data), data, observer))
@@ -256,7 +256,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                             #constructor
     
                             impl<T: Observer> #parent_name<#state_name, T> {
-                                fn init(data: #sdt, mut observer: T) -> Result<Self, T::Error> {
+                                pub fn init(data: #sdt, mut observer: T) -> Result<Self, T::Error> {
                                     observer.on_init(State::#state_name, Some(data), Option::<()>::None)?;
                                     observer.#enter_fn_name(None)?;
                                     Ok(Self::new(#state_name::new(), data, observer))
@@ -285,7 +285,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                             #constructor
     
                             impl<T: Observer> #parent_name<#state_name, T> {
-                                fn init(state_data: #dt, mut observer: T) -> Result<Self, T::Error> {
+                                pub fn init(state_data: #dt, mut observer: T) -> Result<Self, T::Error> {
                                     observer.on_init(State::#state_name, Option::<()>::None, Some(state_data))?;
                                     observer.#enter_fn_name(None, state_data)?;
                                     Ok(Self::new(#state_name::new(state_data), observer))
@@ -296,7 +296,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                             #constructor
     
                             impl<T: Observer> #parent_name<#state_name, T> {
-                                fn init(mut observer: T) -> Result<Self, T::Error> {
+                                pub fn init(mut observer: T) -> Result<Self, T::Error> {
                                     observer.on_init(State::#state_name, Option::<()>::None, Option::<()>::None)?;
                                     observer.#enter_fn_name(None)?;
                                     Ok(Self::new(#state_name::new(), observer))
@@ -478,7 +478,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
 
         #(#restore_fns)*
 
-        fn restore<T: Observer>(state_str: &str, data: Option<Encoded>, state_data: Option<Encoded>, observer: T) -> Result<#wrapped_type<T>, ()> {
+        pub fn restore<T: Observer>(state_str: &str, data: Option<Encoded>, state_data: Option<Encoded>, observer: T) -> Result<#wrapped_type<T>, ()> {
             match state_str {
                 #(#restore_arms,)*
                 _ => Err(())
