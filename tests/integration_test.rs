@@ -34,7 +34,33 @@ impl Observer for Log {
 
 #[test]
 fn init() {
-    let _job = Job::init(JobData {}, QueuedData {}, Log {}).unwrap();
+    let _job = Job::init(Some("foo".to_string()), JobData {}, QueuedData {}, Log {}).unwrap();
+}
+
+#[test]
+fn init_without_id() {
+    let result = Job::init(None, JobData {}, QueuedData {}, Log {});
+    let err = result.err().unwrap();
+    match err {
+        InitError::EmptyId => {},
+        _ => panic!("expected InitErr::EmptyId")
+    };
+}
+
+#[test]
+fn init_with_deferred_id() {
+    struct DeferredIdInitLog {
+    }
+
+    impl Observer for DeferredIdInitLog {
+        type Error = ();
+
+        fn on_init<T:Serialize, U:Serialize>(&mut self, _id: Option<String>, _to: State, _data: Option<T> , _state_data: Option<U>) -> Result<Option<String>, Self::Error> {
+            Ok(Some("foo".to_string()))
+        }
+    }
+
+    let _job = Job::init(None, JobData {}, QueuedData {}, DeferredIdInitLog {}).unwrap();
 }
 
 #[test]
@@ -46,9 +72,9 @@ fn on_init() {
     impl Observer for &mut InitLog {
         type Error = ();
 
-        fn on_init<T:Serialize,U:Serialize>(&mut self, to: State, _data:Option<T> , _state_data:Option<U>) ->Result<(),Self::Error> {
+        fn on_init<T:Serialize,U:Serialize>(&mut self, id: Option<String>, to: State, _data:Option<T> , _state_data:Option<U>) ->Result<Option<String>, Self::Error> {
             self.initiated_to_state = Some(to);
-            Ok(())
+            Ok(id)
         }
     }
 
@@ -56,7 +82,7 @@ fn on_init() {
         initiated_to_state: None
     };
 
-    let _job = Job::init(JobData {}, QueuedData {}, &mut init_log).unwrap();
+    let _job = Job::init(Some("foo".to_string()), JobData {}, QueuedData {}, &mut init_log).unwrap();
 
     match init_log.initiated_to_state {
         Some(state) => assert_eq!("Queued", state.to_string()),
@@ -66,14 +92,14 @@ fn on_init() {
 
 #[test]
 fn read_data() {
-    let job = Job::init(JobData {}, QueuedData {}, Log {}).unwrap();
+    let job = Job::init(Some("foo".to_string()), JobData {}, QueuedData {}, Log {}).unwrap();
     let _job_data = job.data();
     let _job_state_data = job.state.data();
 }
 
 #[test]
 fn transition() {
-    let job = Job::init(JobData {}, QueuedData {}, Log {}).unwrap();
+    let job = Job::init(Some("foo".to_string()), JobData {}, QueuedData {}, Log {}).unwrap();
     let _job = job.start(ProcessingData {}).unwrap();
 }
 
@@ -87,7 +113,7 @@ fn on_transition() {
     impl Observer for &mut TransitionLog {
         type Error = ();
 
-        fn on_transition<T:Serialize>(&mut self, from: State, to: State, _data:Option<T>) ->Result<(),Self::Error> {
+        fn on_transition<T:Serialize>(&mut self, _id: &str, from: State, to: State, _data:Option<T>) ->Result<(),Self::Error> {
             self.from = Some(from);
             self.to = Some(to);
             Ok(())
@@ -99,7 +125,7 @@ fn on_transition() {
         to: None
     };
 
-    let job = Job::init(JobData {}, QueuedData {}, &mut transition_log).unwrap();
+    let job = Job::init(Some("foo".to_string()), JobData {}, QueuedData {}, &mut transition_log).unwrap();
     let _job = job.start(ProcessingData {}).unwrap();
 
     match transition_log.from {

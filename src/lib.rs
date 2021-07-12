@@ -154,10 +154,10 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
             let exit_call = match state_data_types.get(state_name) {
                 Some(_) => quote! {
                     let old_data = self.state.data();
-                    self.observer.#exit_fn_name(State::#next_state_name, *old_data)?;
+                    self.observer.#exit_fn_name(&self.id, State::#next_state_name, *old_data).map_err(|e| TransitionError::ObserverError(e))?;
                 },
                 None => quote! {
-                    self.observer.#exit_fn_name(State::#next_state_name)?;
+                    self.observer.#exit_fn_name(&self.id, State::#next_state_name).map_err(|e| TransitionError::ObserverError(e))?;
                 }
             };
 
@@ -165,21 +165,21 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                 Some(a) => match shared_data_type {
                     Some(_) => quote! {
                         impl<T: Observer> #parent_name<#state_name, T> {
-                            pub fn #event(mut self, data: #a) -> Result<#parent_name<#next_state_name, T>, T::Error> {
-                                self.observer.on_transition(State::#state_name, State::#next_state_name, Some(data))?;
+                            pub fn #event(mut self, data: #a) -> Result<#parent_name<#next_state_name, T>, TransitionError<T::Error>> {
+                                self.observer.on_transition(&self.id, State::#state_name, State::#next_state_name, Some(data)).map_err(|e| TransitionError::ObserverError(e))?;
                                 #exit_call
-                                self.observer.#enter_fn_name(Some(State::#state_name), data)?;
-                                Ok(#parent_name::<#next_state_name, T>::new(#next_state_name::new(data), self.data, self.observer))
+                                self.observer.#enter_fn_name(&self.id, Some(State::#state_name), data).map_err(|e| TransitionError::ObserverError(e))?;
+                                Ok(#parent_name::<#next_state_name, T>::new(self.id, #next_state_name::new(data), self.data, self.observer))
                             }
                         }
                     },
                     None => quote! {
                         impl<T: Observer> #parent_name<#state_name, T> {
-                            pub fn #event(mut self, data: #a) -> Result<#parent_name<#next_state_name, T>, T::Error> {
-                                self.observer.on_transition(State::#state_name, State::#next_state_name, Some(data))?;
+                            pub fn #event(mut self, data: #a) -> Result<#parent_name<#next_state_name, T>, TransitionError<T::Error>> {
+                                self.observer.on_transition(&self.id, State::#state_name, State::#next_state_name, Some(data)).map_err(|e| TransitionError::ObserverError(e))?;
                                 #exit_call
-                                self.observer.#enter_fn_name(Some(State::#state_name), data)?;
-                                Ok(#parent_name::<#next_state_name, T>::new(#next_state_name::new(data), self.observer))
+                                self.observer.#enter_fn_name(&self.id, Some(State::#state_name), data).map_err(|e| TransitionError::ObserverError(e))?;
+                                Ok(#parent_name::<#next_state_name, T>::new(self.id, #next_state_name::new(data), self.observer))
                             }
                         }
                     }
@@ -187,21 +187,21 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                 None => match shared_data_type {
                     Some(_) => quote! {
                         impl<T: Observer> #parent_name<#state_name, T> {
-                            pub fn #event(mut self) -> Result<#parent_name<#next_state_name, T>, T::Error> {
-                                self.observer.on_transition(State::#state_name, State::#next_state_name, Option::<()>::None)?;
+                            pub fn #event(mut self) -> Result<#parent_name<#next_state_name, T>, TransitionError<T::Error>> {
+                                self.observer.on_transition(&self.id, State::#state_name, State::#next_state_name, Option::<()>::None).map_err(|e| TransitionError::ObserverError(e))?;
                                 #exit_call
-                                self.observer.#enter_fn_name(Some(State::#state_name))?;
-                                Ok(#parent_name::<#next_state_name, T>::new(#next_state_name::new(), self.data, self.observer))
+                                self.observer.#enter_fn_name(&self.id, Some(State::#state_name)).map_err(|e| TransitionError::ObserverError(e))?;
+                                Ok(#parent_name::<#next_state_name, T>::new(self.id, #next_state_name::new(), self.data, self.observer))
                             }
                         }
                     },
                     None => quote! {
                         impl<T: Observer> #parent_name<#state_name, T> {
-                            pub fn #event(mut self) -> Result<#parent_name<#next_state_name, T>, T::Error> {
-                                self.observer.on_transition(State::#state_name, State::#next_state_name, Option::<()>::None)?;
+                            pub fn #event(mut self) -> Result<#parent_name<#next_state_name, T>, TransitionError<T::Error>> {
+                                self.observer.on_transition(&self.id, State::#state_name, State::#next_state_name, Option::<()>::None).map_err(|e| TransitionError::ObserverError(e))?;
                                 #exit_call
-                                self.observer.#enter_fn_name(Some(State::#state_name))?;
-                                Ok(#parent_name::<#next_state_name, T>::new(#next_state_name::new(), self.observer))
+                                self.observer.#enter_fn_name(&self.id, Some(State::#state_name)).map_err(|e| TransitionError::ObserverError(e))?;
+                                Ok(#parent_name::<#next_state_name, T>::new(self.id, #next_state_name::new(), self.observer))
                             }
                         }
                     }
@@ -224,8 +224,9 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
             Some(sdt) => {
                 let constructor = quote! {
                     impl<T: Observer> #parent_name<#state_name, T> {
-                        fn new(state: #state_name, data: #sdt, observer: T) -> Self {
+                        fn new(id: String, state: #state_name, data: #sdt, observer: T) -> Self {
                             Self {
+                                id,
                                 state,
                                 data,
                                 observer
@@ -245,10 +246,10 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                             #constructor
     
                             impl<T: Observer> #parent_name<#state_name, T> {
-                                pub fn init(data: #sdt, state_data: #dt, mut observer: T) -> Result<Self, T::Error> {
-                                    observer.on_init(State::#state_name, Some(data), Some(state_data))?;
-                                    observer.#enter_fn_name(None, state_data)?;
-                                    Ok(Self::new(#state_name::new(state_data), data, observer))
+                                pub fn init(id: Option<String>, data: #sdt, state_data: #dt, mut observer: T) -> Result<Self, InitError<T::Error>> {
+                                    let id = observer.on_init(id, State::#state_name, Some(data), Some(state_data)).map_err(|e| InitError::ObserverError(e))?.ok_or(InitError::EmptyId)?;
+                                    observer.#enter_fn_name(&id, None, state_data).map_err(|e| InitError::ObserverError(e))?;
+                                    Ok(Self::new(id, #state_name::new(state_data), data, observer))
                                 }
                             }
                         },
@@ -256,10 +257,10 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                             #constructor
     
                             impl<T: Observer> #parent_name<#state_name, T> {
-                                pub fn init(data: #sdt, mut observer: T) -> Result<Self, T::Error> {
-                                    observer.on_init(State::#state_name, Some(data), Option::<()>::None)?;
-                                    observer.#enter_fn_name(None)?;
-                                    Ok(Self::new(#state_name::new(), data, observer))
+                                pub fn init(id: Option<String>, data: #sdt, mut observer: T) -> Result<Self, InitError<T::Error>> {
+                                    let id = observer.on_init(id, State::#state_name, Some(data), Option::<()>::None).map_err(|e| InitError::ObserverError(e))?.ok_or(InitError::EmptyId)?;
+                                    observer.#enter_fn_name(&id, None).map_err(|e| InitError::ObserverError(e))?;
+                                    Ok(Self::new(id, #state_name::new(), data, observer))
                                 }
                             }
                         }
@@ -269,8 +270,9 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
             None => {
                 let constructor = quote! {
                     impl<T: Observer> #parent_name<#state_name, T> {
-                        fn new(state: #state_name, observer: T) -> Self {
+                        fn new(id: String, state: #state_name, observer: T) -> Self {
                             Self {
+                                id,
                                 state,
                                 observer
                             }
@@ -285,10 +287,10 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                             #constructor
     
                             impl<T: Observer> #parent_name<#state_name, T> {
-                                pub fn init(state_data: #dt, mut observer: T) -> Result<Self, T::Error> {
-                                    observer.on_init(State::#state_name, Option::<()>::None, Some(state_data))?;
-                                    observer.#enter_fn_name(None, state_data)?;
-                                    Ok(Self::new(#state_name::new(state_data), observer))
+                                pub fn init(id: Option<String>, state_data: #dt, mut observer: T) -> Result<Self, InitError<T::Error>> {
+                                    let id = observer.on_init(id, State::#state_name, Option::<()>::None, Some(state_data)).map_err(|e| InitError::ObserverError(e))?.ok_or(InitError::EmptyId)?;
+                                    observer.#enter_fn_name(&id, None, state_data).map_err(|e| InitError::ObserverError(e))?;
+                                    Ok(Self::new(id, #state_name::new(state_data), observer))
                                 }
                             }
                         },
@@ -296,10 +298,10 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                             #constructor
     
                             impl<T: Observer> #parent_name<#state_name, T> {
-                                pub fn init(mut observer: T) -> Result<Self, T::Error> {
-                                    observer.on_init(State::#state_name, Option::<()>::None, Option::<()>::None)?;
-                                    observer.#enter_fn_name(None)?;
-                                    Ok(Self::new(#state_name::new(), observer))
+                                pub fn init(id: Option<String>, mut observer: T) -> Result<Self, InitError<T::Error>> {
+                                    let id = observer.on_init(id, State::#state_name, Option::<()>::None, Option::<()>::None).map_err(|e| InitError::ObserverError(e))?.ok_or(InitError::EmptyId)?;
+                                    observer.#enter_fn_name(&id, None).map_err(|e| InitError::ObserverError(e))?;
+                                    Ok(Self::new(id, #state_name::new(), observer))
                                 }
                             }
                         }
@@ -312,6 +314,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
     let parent_struct = match shared_data_type {
         Some(sdt) => quote! {
             pub struct #parent_name<T, U: Observer> {
+                id: String,
                 pub state: T,
                 data: #sdt,
                 observer: U
@@ -319,6 +322,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
         },
         None => quote! {
             pub struct #parent_name<T, U: Observer> {
+                id: String,
                 pub state: T,
                 observer: U
             }
@@ -335,7 +339,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
             Some(shared_dt) => {
                 match expected_state_dt {
                     Some(state_dt) => quote! {
-                        fn #fn_name<T: Observer>(shared_d_enc: Option<Encoded>, state_d_enc: Option<Encoded>, observer: T) -> Result<#wrapped_type<T>, ()> {
+                        fn #fn_name<T: Observer>(id: String, shared_d_enc: Option<Encoded>, state_d_enc: Option<Encoded>, observer: T) -> Result<#wrapped_type<T>, ()> {
                             let shared_d_enc_some = shared_d_enc.ok_or(())?;
                             let shared_d: #shared_dt = match shared_d_enc_some {
                                 Encoded::Json(data) => serde_json::from_str(&data).ok().ok_or(())?,
@@ -348,11 +352,11 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                                 _ => return Err(())
                             };
 
-                            Ok(#wrapped_type::#state_name(#parent_name::<#state_name, T>::new(#state_name::new(state_d), shared_d, observer)))
+                            Ok(#wrapped_type::#state_name(#parent_name::<#state_name, T>::new(id, #state_name::new(state_d), shared_d, observer)))
                         }
                     },
                     None => quote! {
-                        fn #fn_name<T: Observer>(shared_d_enc: Option<Encoded>, state_d_enc: Option<Encoded>, observer: T) -> Result<#wrapped_type<T>, ()> {
+                        fn #fn_name<T: Observer>(id: String, shared_d_enc: Option<Encoded>, state_d_enc: Option<Encoded>, observer: T) -> Result<#wrapped_type<T>, ()> {
                             let shared_d_enc_some = shared_d_enc.ok_or(())?;
                             let shared_d: #shared_dt = match shared_d_enc_some {
                                 Encoded::Json(data) => serde_json::from_str(&data).ok().ok_or(())?,
@@ -363,7 +367,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                                 return Err(())
                             };
 
-                            Ok(#wrapped_type::#state_name(#parent_name::<#state_name, T>::new(#state_name::new(), shared_d, observer)))
+                            Ok(#wrapped_type::#state_name(#parent_name::<#state_name, T>::new(id, #state_name::new(), shared_d, observer)))
                         }
                     }
                 }
@@ -371,7 +375,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
             None => {
                 match expected_state_dt {
                     Some(state_dt) => quote! {
-                        fn #fn_name<T: Observer>(shared_d_enc: Option<Encoded>, state_d_enc: Option<Encoded>, observer: T) -> Result<#wrapped_type<T>, ()> {
+                        fn #fn_name<T: Observer>(id: String, shared_d_enc: Option<Encoded>, state_d_enc: Option<Encoded>, observer: T) -> Result<#wrapped_type<T>, ()> {
                             if shared_d_enc.is_some() {
                                 return Err(())
                             };
@@ -382,11 +386,11 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                                 _ => return Err(())
                             };
 
-                            Ok(#wrapped_type::#state_name(#parent_name::<#state_name, T>::new(#state_name::new(state_d), observer)))
+                            Ok(#wrapped_type::#state_name(#parent_name::<#state_name, T>::new(id, #state_name::new(state_d), observer)))
                         }
                     },
                     None => quote! {
-                        fn #fn_name<T: Observer>(shared_d_enc: Option<Encoded>, state_d_enc: Option<Encoded>, observer: T) -> Result<#wrapped_type<T>, ()> {
+                        fn #fn_name<T: Observer>(id: String, shared_d_enc: Option<Encoded>, state_d_enc: Option<Encoded>, observer: T) -> Result<#wrapped_type<T>, ()> {
                             if shared_d_enc.is_some() {
                                 return Err(())
                             };
@@ -395,7 +399,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                                 return Err(())
                             };
 
-                            Ok(#wrapped_type::#state_name(#parent_name::<#state_name, T>::new(#state_name::new(), observer)))
+                            Ok(#wrapped_type::#state_name(#parent_name::<#state_name, T>::new(id, #state_name::new(), observer)))
                         }
                     }
                 }
@@ -406,7 +410,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
     let restore_arms = m.states.iter().map(|x| {
         let state_name = &x.name;
         let fn_name = format_ident!("{}_{}", "restore", state_name.to_string().to_lowercase());
-        quote!(stringify!(#state_name) => #fn_name(data, state_data, observer))
+        quote!(stringify!(#state_name) => #fn_name(id, data, state_data, observer))
     });
 
     let listeners = m.states.iter().map(|x| {
@@ -417,18 +421,18 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
         let maybe_data_type = state_data_types.get(state_name);
         match maybe_data_type {
             Some(data_type) => quote! {
-                fn #enter_fn_name(&self, from: Option<State>, data: #data_type) -> Result<(), Self::Error> {
+                fn #enter_fn_name(&self, id: &str, from: Option<State>, data: #data_type) -> Result<(), Self::Error> {
                     Ok(())
                 }
-                fn #exit_fn_name(&self, to: State, data: #data_type) -> Result<(), Self::Error> {
+                fn #exit_fn_name(&self, id: &str, to: State, data: #data_type) -> Result<(), Self::Error> {
                     Ok(())
                 }
             },
             None => quote! {
-                fn #enter_fn_name(&self, from: Option<State>) -> Result<(), Self::Error> {
+                fn #enter_fn_name(&self, id: &str, from: Option<State>) -> Result<(), Self::Error> {
                     Ok(())
                 }
-                fn #exit_fn_name(&self, to: State) -> Result<(), Self::Error> {
+                fn #exit_fn_name(&self, id: &str, to: State) -> Result<(), Self::Error> {
                     Ok(())
                 }
             }
@@ -437,6 +441,17 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
     });
 
     let out = quote! {
+        #[derive(Debug)]
+        pub enum InitError<T> {
+            EmptyId,
+            ObserverError(T)
+        }
+
+        #[derive(Debug)]
+        pub enum TransitionError<T> {
+            ObserverError(T)
+        }
+        
         pub enum State {
             #(#state_names),*
         }
@@ -452,11 +467,11 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
         pub trait Observer {
             type Error;
 
-            fn on_init<T: Serialize, U: Serialize>(&mut self, to: State, data: Option<T>, state_data: Option<U>) -> Result<(), Self::Error> {
-                Ok(())
+            fn on_init<T: Serialize, U: Serialize>(&mut self, id: Option<String>, to: State, data: Option<T>, state_data: Option<U>) -> Result<Option<String>, Self::Error> {
+                Ok(id)
             }
             
-            fn on_transition<T: Serialize>(&mut self, from: State, to: State, data: Option<T>) -> Result<(), Self::Error> {
+            fn on_transition<T: Serialize>(&mut self, id: &str, from: State, to: State, data: Option<T>) -> Result<(), Self::Error> {
                 Ok(())
             }
 
@@ -478,7 +493,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
 
         #(#restore_fns)*
 
-        pub fn restore<T: Observer>(state_str: &str, data: Option<Encoded>, state_data: Option<Encoded>, observer: T) -> Result<#wrapped_type<T>, ()> {
+        pub fn restore<T: Observer>(id: String, state_str: &str, data: Option<Encoded>, state_data: Option<Encoded>, observer: T) -> Result<#wrapped_type<T>, ()> {
             match state_str {
                 #(#restore_arms,)*
                 _ => Err(())
