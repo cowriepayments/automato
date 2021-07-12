@@ -91,6 +91,14 @@ fn on_init() {
 }
 
 #[test]
+fn read_id() {
+    let job = Job::init(Some("foo".to_string()), JobData {}, QueuedData {}, Log {}).unwrap();
+    let id = job.id();
+
+    assert_eq!(id, "foo");
+}
+
+#[test]
 fn read_data() {
     let job = Job::init(Some("foo".to_string()), JobData {}, QueuedData {}, Log {}).unwrap();
     let _job_data = job.data();

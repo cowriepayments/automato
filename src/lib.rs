@@ -220,6 +220,12 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
         let state_name = &x.name;
         let enter_fn_name = format_ident!("{}_{}", "on_enter", state_name.to_string().to_case(Case::Snake));
 
+        let id_fn = quote! {
+            pub fn id(&self) -> &str {
+                &self.id
+            }
+        };
+
         match shared_data_type {
             Some(sdt) => {
                 let constructor = quote! {
@@ -232,6 +238,8 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                                 observer
                             }
                         }
+
+                        #id_fn
 
                         pub fn data(&self) -> &#sdt {
                             &self.data
@@ -277,6 +285,8 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                                 observer
                             }
                         }
+
+                        #id_fn
                     }
                 };
 
