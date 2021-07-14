@@ -2,16 +2,16 @@ use serde::{ Serialize, Deserialize };
 use serde_json;
 use automato::statemachine;
 
-#[derive(Clone, Copy, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct JobData {}
 
-#[derive(Clone, Copy, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct QueuedData {}
 
-#[derive(Clone, Copy, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct ProcessingData {}
 
-#[derive(Clone, Copy, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize)]
 pub struct CompletedData {}
 
 statemachine! {
