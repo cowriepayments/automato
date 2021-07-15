@@ -342,7 +342,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
         let state_name = &x.name;
         let expected_state_dt = state_data_types.get(state_name);
 
-        let fn_name = format_ident!("{}_{}", "restore", state_name.to_string().to_lowercase());
+        let fn_name = format_ident!("{}_{}", "restore", state_name.to_string().to_case(Case::Snake));
 
         match shared_data_type {
             Some(shared_dt) => {
@@ -414,7 +414,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
 
     let restore_arms = m.states.iter().map(|x| {
         let state_name = &x.name;
-        let fn_name = format_ident!("{}_{}", "restore", state_name.to_string().to_lowercase());
+        let fn_name = format_ident!("{}_{}", "restore", state_name.to_string().to_case(Case::Snake));
         quote!(stringify!(#state_name) => #fn_name(id, data, state_data, observer).await)
     });
 
