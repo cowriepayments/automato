@@ -128,7 +128,7 @@ fn on_transition() {
     impl Observer for &mut TransitionLog {
         type Error = ();
 
-        async fn on_transition<T:Serialize + Send>(&mut self, _id: &str, from: State, to: State, _data: Option<T>) ->Result<(),Self::Error> {
+        async fn on_transition<T: Serialize + Send, U: Serialize + Send>(&mut self, _id: &str, from: State, to: State, _data: Option<T>, _state_data: Option<U>) ->Result<(),Self::Error> {
             self.from = Some(from);
             self.to = Some(to);
             Ok(())
