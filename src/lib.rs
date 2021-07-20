@@ -358,7 +358,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
             Some(shared_dt) => {
                 match expected_state_dt {
                     Some(state_dt) => quote! {
-                        async fn #fn_name<'a, 'b, T: Observer + Send>(id: String, shared_d_enc: Option<Encoded<'a>>, state_d_enc: Option<Encoded<'b>>, observer: T) -> Result<#wrapped_type<T>, RestoreError> {
+                        async fn #fn_name<T: Observer + Send>(id: String, shared_d_enc: Option<Encoded>, state_d_enc: Option<Encoded>, observer: T) -> Result<#wrapped_type<T>, RestoreError> {
                             let shared_d_enc_some = shared_d_enc.ok_or(RestoreError::EmptyData)?;
                             let shared_d: #shared_dt = match shared_d_enc_some {
                                 Encoded::Json(data) => serde_json::from_str(&data).ok().ok_or(RestoreError::InvalidData)?
@@ -373,7 +373,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                         }
                     },
                     None => quote! {
-                        async fn #fn_name<'a, 'b, T: Observer + Send>(id: String, shared_d_enc: Option<Encoded<'a>>, state_d_enc: Option<Encoded<'b>>, observer: T) -> Result<#wrapped_type<T>, RestoreError> {
+                        async fn #fn_name<T: Observer + Send>(id: String, shared_d_enc: Option<Encoded>, state_d_enc: Option<Encoded>, observer: T) -> Result<#wrapped_type<T>, RestoreError> {
                             let shared_d_enc_some = shared_d_enc.ok_or(RestoreError::EmptyData)?;
                             let shared_d: #shared_dt = match shared_d_enc_some {
                                 Encoded::Json(data) => serde_json::from_str(&data).ok().ok_or(RestoreError::InvalidData)?
@@ -391,7 +391,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
             None => {
                 match expected_state_dt {
                     Some(state_dt) => quote! {
-                        async fn #fn_name<'a, 'b, T: Observer + Send>(id: String, shared_d_enc: Option<Encoded<'a>>, state_d_enc: Option<Encoded<'b>>, observer: T) -> Result<#wrapped_type<T>, RestoreError> {
+                        async fn #fn_name<T: Observer + Send>(id: String, shared_d_enc: Option<Encoded>, state_d_enc: Option<Encoded>, observer: T) -> Result<#wrapped_type<T>, RestoreError> {
                             if shared_d_enc.is_some() {
                                 return Err(RestoreError::UnexpectedData)
                             };
@@ -405,7 +405,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                         }
                     },
                     None => quote! {
-                        async fn #fn_name<'a, 'b, T: Observer + Send>(id: String, shared_d_enc: Option<Encoded<'a>>, state_d_enc: Option<Encoded<'b>>, observer: T) -> Result<#wrapped_type<T>, RestoreError> {
+                        async fn #fn_name<T: Observer + Send>(id: String, shared_d_enc: Option<Encoded>, state_d_enc: Option<Encoded>, observer: T) -> Result<#wrapped_type<T>, RestoreError> {
                             if shared_d_enc.is_some() {
                                 return Err(RestoreError::UnexpectedData)
                             };
@@ -494,6 +494,12 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
             InvalidData,
             InvalidState
         }
+
+        #[derive(Debug)]
+        pub enum RetrieveError<T> {
+            RestoreError(RestoreError),
+            RetrieverError(T)
+        }
         
         pub enum State {
             #(#state_names),*
@@ -522,6 +528,13 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
             #(#listeners)*
         }
 
+        #[async_trait]
+        pub trait Retriever {
+            type RetrieverError;
+
+            async fn on_retrieve(&mut self, id: &str) -> Result<(String, Option<Encoded>, Option<Encoded>), Self::RetrieverError>;
+        }
+
         #parent_struct
         #(#state_structs)*
         #(#parent_state_impls)*
@@ -531,17 +544,24 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
             #(#state_names(#parent_name<#state_names, T>)),*
         }
 
-        pub enum Encoded<'a> {
-            Json(&'a str)
+        pub enum Encoded {
+            Json(String)
         }
 
         #(#restore_fns)*
 
-        pub async fn restore<'a, 'b, T: Observer + Send>(id: String, state_str: &str, data: Option<Encoded<'a>>, state_data: Option<Encoded<'b>>, observer: T) -> Result<#wrapped_type<T>, RestoreError> {
+        pub async fn restore<T: Observer + Send>(id: String, state_string: String, data: Option<Encoded>, state_data: Option<Encoded>, observer: T) -> Result<#wrapped_type<T>, RestoreError> {
+            let state_str: &str = &state_string;
             match state_str {
                 #(#restore_arms,)*
                 _ => Err(RestoreError::InvalidState)
             }
+        }
+
+        pub async fn retrieve<T: Observer + Retriever + Send>(id: String, mut obret: T) -> Result<#wrapped_type<T>, RetrieveError<T::RetrieverError>> {
+            let id_str: &str = &id;
+            let (state_string, maybe_data, maybe_state_data) = obret.on_retrieve(id_str).await.map_err(|e| RetrieveError::RetrieverError(e))?;
+            restore(id, state_string, maybe_data, maybe_state_data, obret).await.map_err(|e| RetrieveError::RestoreError(e))
         }
     };
 
