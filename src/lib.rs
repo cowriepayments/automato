@@ -361,12 +361,12 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                         async fn #fn_name<T: Observer + Send>(id: String, shared_d_enc: Option<Encoded>, state_d_enc: Option<Encoded>, observer: T) -> Result<#wrapped_type<T>, RestoreError> {
                             let shared_d_enc_some = shared_d_enc.ok_or(RestoreError::EmptyData)?;
                             let shared_d: #shared_dt = match shared_d_enc_some {
-                                Encoded::Json(data) => serde_json::from_str(&data).ok().ok_or(RestoreError::InvalidData)?
+                                Encoded::Json(data) => serde_json::from_value(data).ok().ok_or(RestoreError::InvalidData)?
                             };
 
                             let state_d_enc_some = state_d_enc.ok_or(RestoreError::EmptyData)?;
                             let state_d: #state_dt = match state_d_enc_some {
-                                Encoded::Json(data) => serde_json::from_str(&data).ok().ok_or(RestoreError::InvalidData)?
+                                Encoded::Json(data) => serde_json::from_value(data).ok().ok_or(RestoreError::InvalidData)?
                             };
 
                             Ok(#wrapped_type::#state_name(#parent_name::<#state_name, T>::new(id, #state_name::new(state_d), shared_d, observer)))
@@ -376,7 +376,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                         async fn #fn_name<T: Observer + Send>(id: String, shared_d_enc: Option<Encoded>, state_d_enc: Option<Encoded>, observer: T) -> Result<#wrapped_type<T>, RestoreError> {
                             let shared_d_enc_some = shared_d_enc.ok_or(RestoreError::EmptyData)?;
                             let shared_d: #shared_dt = match shared_d_enc_some {
-                                Encoded::Json(data) => serde_json::from_str(&data).ok().ok_or(RestoreError::InvalidData)?
+                                Encoded::Json(data) => serde_json::from_value(data).ok().ok_or(RestoreError::InvalidData)?
                             };
 
                             if state_d_enc.is_some() {
@@ -398,7 +398,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
 
                             let state_d_enc_some = state_d_enc.ok_or(RestoreError::EmptyData)?;
                             let state_d: #state_dt = match state_d_enc_some {
-                                Encoded::Json(data) => serde_json::from_str(&data).ok().ok_or(RestoreError::InvalidData)?
+                                Encoded::Json(data) => serde_json::from_value(data).ok().ok_or(RestoreError::InvalidData)?
                             };
 
                             Ok(#wrapped_type::#state_name(#parent_name::<#state_name, T>::new(id, #state_name::new(state_d), observer)))
@@ -545,7 +545,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
         }
 
         pub enum Encoded {
-            Json(String)
+            Json(serde_json::Value)
         }
 
         #(#restore_fns)*
