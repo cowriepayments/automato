@@ -36,7 +36,7 @@ impl Parse for Machine {
         
         let mut shared_data_type: Option<Ident> = None;
         let colon: Result<Token![:]> = input.parse();
-        if let Ok(_) = colon {
+        if colon.is_ok() {
             shared_data_type = Some(input.parse()?);
         }
 
@@ -65,7 +65,7 @@ impl Parse for StateDefinition {
 
         let mut associated_data_type: Option<Ident> = None;
         let colon: Result<Token![:]> = input.parse();
-        if let Ok(_) = colon {
+        if colon.is_ok() {
             associated_data_type = Some(input.parse()?);
         }
 
