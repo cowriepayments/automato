@@ -233,11 +233,6 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
             pub fn id(&self) -> &str {
                 &self.id
             }
-
-            pub fn change_observer(mut self, observer: T) -> Self {
-                self.observer = observer;
-                self
-            }
         };
 
         match shared_data_type {
@@ -253,11 +248,20 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                             }
                         }
 
-                        #common_methods
+                        pub fn clone(old: Self, observer: T) -> Self {
+                            Self {
+                                id: old.id,
+                                state: old.state,
+                                data: old.data,
+                                observer: observer
+                            }
+                        }
 
                         pub fn data(&self) -> &#sdt {
                             &self.data
                         }
+
+                        #common_methods
                     }
                 };
 
@@ -297,6 +301,14 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                                 id,
                                 state,
                                 observer
+                            }
+                        }
+
+                        pub fn clone(old: Self, observer: T) -> Self {
+                            Self {
+                                id: old.id,
+                                state: old.state,
+                                observer: observer
                             }
                         }
 
