@@ -248,15 +248,6 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                             }
                         }
 
-                        pub fn clone(old: Self, observer: T) -> Self {
-                            Self {
-                                id: old.id,
-                                state: old.state,
-                                data: old.data,
-                                observer: observer
-                            }
-                        }
-
                         pub fn data(&self) -> &#sdt {
                             &self.data
                         }
@@ -301,14 +292,6 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                                 id,
                                 state,
                                 observer
-                            }
-                        }
-
-                        pub fn clone(old: Self, observer: T) -> Self {
-                            Self {
-                                id: old.id,
-                                state: old.state,
-                                observer: observer
                             }
                         }
 
