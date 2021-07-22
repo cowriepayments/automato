@@ -554,7 +554,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
             }
         }
 
-        pub async fn retrieve<T: Retriever + Send>(id: String, mut retriever: T) -> Result<#wrapped_type, RetrieveError<T::RetrieverError>> {
+        pub async fn retrieve<T: Retriever + Send>(mut retriever: T, id: String) -> Result<#wrapped_type, RetrieveError<T::RetrieverError>> {
             let id_str: &str = &id;
             let (state_string, maybe_data, maybe_state_data) = retriever.on_retrieve(id_str).await.map_err(|e| RetrieveError::RetrieverError(e))?;
             restore(id, state_string, maybe_data, maybe_state_data).await.map_err(|e| RetrieveError::RestoreError(e))
