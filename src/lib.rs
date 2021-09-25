@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use proc_macro::TokenStream;
-use syn::{ parse_macro_input, braced, token, Ident, Result, Token };
+use syn::{ parse_macro_input, braced, parenthesized, token, Ident, Type, Result, Token };
 use syn::parse::{ Parse, ParseStream };
 use syn::punctuated::Punctuated;
 use quote::{quote, format_ident};
@@ -24,7 +24,10 @@ struct StateDefinition {
 }
 
 struct StateTransition {
+    txn: bool,
     event: Ident,
+    paren_token: token::Paren,
+    arguments: Punctuated<Type, Token![,]>,
     #[allow(dead_code)]
     separator: Token![=>],
     next_state: Ident
@@ -82,8 +85,24 @@ impl Parse for StateDefinition {
 
 impl Parse for StateTransition {
     fn parse(input: ParseStream) -> Result<Self> {
+        let mut txn = false;
+        let event: Ident;
+
+        let x: Ident = input.parse()?;
+        if x == "txn" {
+            txn = true;
+            event = input.parse()?;
+        } else {
+            event = x;
+        }
+
+        let content;
+
         Ok(StateTransition {
-            event: input.parse()?,
+            txn,
+            event,
+            paren_token: parenthesized!(content in input),
+            arguments: content.parse_terminated(Type::parse)?,
             separator: input.parse()?,
             next_state: input.parse()?
         })
@@ -528,6 +547,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
         #[async_trait]
         pub trait Observer {
             type Error;
+            type Transaction;
 
             async fn on_init<T: Serialize + Send, U: Serialize + Send>(&mut self, id: Option<String>, to: State, data: Option<T>, state_data: Option<U>) -> Result<Option<String>, Self::Error> {
                 Ok(id)

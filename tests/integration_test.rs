@@ -19,11 +19,11 @@ pub struct CompletedData {}
 statemachine! {
     Job: JobData {
         init Queued: QueuedData {
-            start => Processing
+            txn start() => Processing
         },
         Processing: ProcessingData {
-            complete => Completed,
-            queue => Queued
+            txn complete() => Completed,
+            txn queue() => Queued
         },
         Completed: CompletedData {}
     }
@@ -34,6 +34,7 @@ struct Log {}
 #[async_trait]
 impl Observer for Log {
     type Error = ();
+    type Transaction = ();
 }
 
 #[test]
@@ -64,6 +65,7 @@ fn init_with_deferred_id() {
     #[async_trait]
     impl Observer for DeferredIdInitLog {
         type Error = ();
+        type Transaction = ();
 
         async fn on_init<T: Serialize + Send, U: Serialize + Send>(
             &mut self,
@@ -94,6 +96,7 @@ fn on_init() {
     #[async_trait]
     impl Observer for &mut InitLog {
         type Error = ();
+        type Transaction = ();
 
         async fn on_init<T: Serialize + Send, U: Serialize + Send>(
             &mut self,
@@ -174,6 +177,7 @@ fn on_transition() {
     #[async_trait]
     impl Observer for &mut TransitionLog {
         type Error = ();
+        type Transaction = ();
 
         async fn on_transition<T: Serialize + Send, U: Serialize + Send>(
             &mut self,
