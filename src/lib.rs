@@ -25,6 +25,7 @@ struct StateDefinition {
 
 struct StateTransition {
     event: Ident,
+    #[allow(dead_code)]
     paren_token: token::Paren,
     arguments: Punctuated<Type, Token![,]>,
     #[allow(dead_code)]
