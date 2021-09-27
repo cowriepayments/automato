@@ -19,11 +19,11 @@ pub struct CompletedData {}
 statemachine! {
     Job: JobData {
         init Queued: QueuedData {
-            start => Processing
+            start() => Processing
         },
         Processing: ProcessingData {
-            complete => Completed,
-            queue => Queued
+            complete() => Completed,
+            queue() => Queued
         },
         Completed: CompletedData {}
     }
@@ -34,11 +34,13 @@ struct Log {}
 #[async_trait]
 impl Observer for Log {
     type Error = ();
+    type Context = ();
 }
 
 #[test]
 fn init() {
     let _job = block_on(Job::init(
+        (),
         Log {},
         Some("foo".to_string()),
         JobData {},
@@ -49,7 +51,7 @@ fn init() {
 
 #[test]
 fn init_without_id() {
-    let result = block_on(Job::init(Log {}, None, JobData {}, QueuedData {}));
+    let result = block_on(Job::init((), Log {}, None, JobData {}, QueuedData {}));
     let err = result.err().unwrap();
     match err {
         InitError::EmptyId => {}
@@ -64,9 +66,11 @@ fn init_with_deferred_id() {
     #[async_trait]
     impl Observer for DeferredIdInitLog {
         type Error = ();
+        type Context = ();
 
         async fn on_init<T: Serialize + Send, U: Serialize + Send>(
             &mut self,
+            _ctx: &mut Self::Context,
             _id: Option<String>,
             _to: State,
             _data: Option<T>,
@@ -77,6 +81,7 @@ fn init_with_deferred_id() {
     }
 
     let _job = block_on(Job::init(
+        (),
         DeferredIdInitLog {},
         None,
         JobData {},
@@ -94,9 +99,11 @@ fn on_init() {
     #[async_trait]
     impl Observer for &mut InitLog {
         type Error = ();
+        type Context = ();
 
         async fn on_init<T: Serialize + Send, U: Serialize + Send>(
             &mut self,
+            _ctx: &mut Self::Context,
             id: Option<String>,
             to: State,
             _data: Option<T>,
@@ -112,6 +119,7 @@ fn on_init() {
     };
 
     let _job = block_on(Job::init(
+        (),
         &mut init_log,
         Some("foo".to_string()),
         JobData {},
@@ -128,6 +136,7 @@ fn on_init() {
 #[test]
 fn read_id() {
     let job = block_on(Job::init(
+        (),
         Log {},
         Some("foo".to_string()),
         JobData {},
@@ -142,6 +151,7 @@ fn read_id() {
 #[test]
 fn read_data() {
     let job = block_on(Job::init(
+        (),
         Log {},
         Some("foo".to_string()),
         JobData {},
@@ -155,13 +165,14 @@ fn read_data() {
 #[test]
 fn transition() {
     let job = block_on(Job::init(
+        (),
         Log {},
         Some("foo".to_string()),
         JobData {},
         QueuedData {},
     ))
     .unwrap();
-    let _job = block_on(job.start(Log {}, ProcessingData {})).unwrap();
+    let _job = block_on(job.start((), ProcessingData {})).unwrap();
 }
 
 #[test]
@@ -174,9 +185,11 @@ fn on_transition() {
     #[async_trait]
     impl Observer for &mut TransitionLog {
         type Error = ();
+        type Context = ();
 
         async fn on_transition<T: Serialize + Send, U: Serialize + Send>(
             &mut self,
+            _ctx: &mut Self::Context,
             _id: &str,
             from: State,
             to: State,
@@ -195,13 +208,14 @@ fn on_transition() {
     };
 
     let job = block_on(Job::init(
+        (),
         &mut transition_log,
         Some("foo".to_string()),
         JobData {},
         QueuedData {},
     ))
     .unwrap();
-    let _job = block_on(job.start(&mut transition_log, ProcessingData {})).unwrap();
+    let _job = block_on(job.start((), ProcessingData {})).unwrap();
 
     match transition_log.from {
         Some(state) => assert_eq!("Queued", state.to_string()),
