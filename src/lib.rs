@@ -548,8 +548,9 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
         #[async_trait]
         pub trait Retriever {
             type RetrieverError;
+            type RetrieverContext: Send;
 
-            async fn on_retrieve(&mut self, id: &str) -> Result<(String, Option<Encoded>, Option<Encoded>), Self::RetrieverError>;
+            async fn on_retrieve(&mut self, ctx: &mut Self::RetrieverContext, id: &str) -> Result<(String, Option<Encoded>, Option<Encoded>), Self::RetrieverError>;
         }
 
         #parent_struct
@@ -575,9 +576,9 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
             }
         }
 
-        pub async fn retrieve<T: Retriever + Observer + Send>(mut retriever: T, id: String) -> Result<#wrapped_type<T>, RetrieveError<T::RetrieverError>> {
+        pub async fn retrieve<T: Retriever + Observer + Send>(mut ctx: T::RetrieverContext, mut retriever: T, id: String) -> Result<#wrapped_type<T>, RetrieveError<T::RetrieverError>> {
             let id_str: &str = &id;
-            let (state_string, maybe_data, maybe_state_data) = retriever.on_retrieve(id_str).await.map_err(|e| RetrieveError::RetrieverError(e))?;
+            let (state_string, maybe_data, maybe_state_data) = retriever.on_retrieve(&mut ctx, id_str).await.map_err(|e| RetrieveError::RetrieverError(e))?;
             restore(retriever, id, state_string, maybe_data, maybe_state_data).await.map_err(|e| RetrieveError::RestoreError(e))
         }
     };
