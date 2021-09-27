@@ -19,11 +19,11 @@ pub struct CompletedData {}
 statemachine! {
     Job: JobData {
         init Queued: QueuedData {
-            start() => Processing
+            start => Processing
         },
         Processing: ProcessingData {
-            complete() => Completed,
-            queue() => Queued
+            complete => Completed,
+            queue => Queued
         },
         Completed: CompletedData {}
     }
