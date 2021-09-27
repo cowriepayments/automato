@@ -184,20 +184,20 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                 Some(a) => match shared_data_type {
                     Some(_) => quote! {
                         impl<T: Observer + Send> #parent_name<#state_name, T> {
-                            pub async fn #event(mut self, mut ctx: T::Context, data: #a) -> Result<#parent_name<#next_state_name, T>, TransitionError<T::Error>> {
-                                self.observer.on_transition(&mut ctx, &self.id, State::#state_name, State::#next_state_name, Some(&self.data), Some(&data)).await.map_err(|e| TransitionError::ObserverError(e))?;
+                            pub async fn #event(mut self, mut ctx: &mut T::Context, data: #a) -> Result<#parent_name<#next_state_name, T>, TransitionError<T::Error>> {
+                                self.observer.on_transition(ctx, &self.id, State::#state_name, State::#next_state_name, Some(&self.data), Some(&data)).await.map_err(|e| TransitionError::ObserverError(e))?;
                                 #exit_call
-                                self.observer.#enter_fn_name(&mut ctx, &self.id, #enter_from_type, &self.data, &data).await.map_err(|e| TransitionError::ObserverError(e))?;
+                                self.observer.#enter_fn_name(ctx, &self.id, #enter_from_type, &self.data, &data).await.map_err(|e| TransitionError::ObserverError(e))?;
                                 Ok(#parent_name::<#next_state_name, T>::new(self.observer, self.id, #next_state_name::new(data), self.data))
                             }
                         }
                     },
                     None => quote! {
                         impl<T: Observer + Send> #parent_name<#state_name, T> {
-                            pub async fn #event(mut self, mut ctx: T::Context, data: #a) -> Result<#parent_name<#next_state_name, T>, TransitionError<T::Error>> {
-                                self.observer.on_transition(&mut ctx, &self.id, State::#state_name, State::#next_state_name, Option::<()>::None, Some(&data)).await.map_err(|e| TransitionError::ObserverError(e))?;
+                            pub async fn #event(mut self, mut ctx: &mut T::Context, data: #a) -> Result<#parent_name<#next_state_name, T>, TransitionError<T::Error>> {
+                                self.observer.on_transition(ctx, &self.id, State::#state_name, State::#next_state_name, Option::<()>::None, Some(&data)).await.map_err(|e| TransitionError::ObserverError(e))?;
                                 #exit_call
-                                self.observer.#enter_fn_name(&mut ctx, &self.id, #enter_from_type, &data).await.map_err(|e| TransitionError::ObserverError(e))?;
+                                self.observer.#enter_fn_name(ctx, &self.id, #enter_from_type, &data).await.map_err(|e| TransitionError::ObserverError(e))?;
                                 Ok(#parent_name::<#next_state_name, T>::new(self.observer, self.id, #next_state_name::new(data)))
                             }
                         }
@@ -206,20 +206,20 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                 None => match shared_data_type {
                     Some(_) => quote! {
                         impl<T: Observer + Send> #parent_name<#state_name, T> {
-                            pub async fn #event(mut self, mut ctx: T::Context) -> Result<#parent_name<#next_state_name, T>, TransitionError<T::Error>> {
-                                self.observer.on_transition(&mut ctx, &self.id, State::#state_name, State::#next_state_name, Some(&self.data), Option::<()>::None).await.map_err(|e| TransitionError::ObserverError(e))?;
+                            pub async fn #event(mut self, mut ctx: &mut T::Context) -> Result<#parent_name<#next_state_name, T>, TransitionError<T::Error>> {
+                                self.observer.on_transition(ctx, &self.id, State::#state_name, State::#next_state_name, Some(&self.data), Option::<()>::None).await.map_err(|e| TransitionError::ObserverError(e))?;
                                 #exit_call
-                                self.observer.#enter_fn_name(&mut ctx, &self.id, #enter_from_type, &self.data).await.map_err(|e| TransitionError::ObserverError(e))?;
+                                self.observer.#enter_fn_name(ctx, &self.id, #enter_from_type, &self.data).await.map_err(|e| TransitionError::ObserverError(e))?;
                                 Ok(#parent_name::<#next_state_name, T>::new(self.observer, self.id, #next_state_name::new(), self.data))
                             }
                         }
                     },
                     None => quote! {
                         impl<T: Observer + Send> #parent_name<#state_name, T> {
-                            pub async fn #event(mut self, mut ctx: T::Context) -> Result<#parent_name<#next_state_name, T>, TransitionError<T::Error>> {
-                                self.observer.on_transition(&mut ctx, &self.id, State::#state_name, State::#next_state_name, Option::<()>::None, Option::<()>::None).await.map_err(|e| TransitionError::ObserverError(e))?;
+                            pub async fn #event(mut self, mut ctx: &mut T::Context) -> Result<#parent_name<#next_state_name, T>, TransitionError<T::Error>> {
+                                self.observer.on_transition(ctx, &self.id, State::#state_name, State::#next_state_name, Option::<()>::None, Option::<()>::None).await.map_err(|e| TransitionError::ObserverError(e))?;
                                 #exit_call
-                                self.observer.#enter_fn_name(&mut ctx, &self.id, #enter_from_type).await.map_err(|e| TransitionError::ObserverError(e))?;
+                                self.observer.#enter_fn_name(ctx, &self.id, #enter_from_type).await.map_err(|e| TransitionError::ObserverError(e))?;
                                 Ok(#parent_name::<#next_state_name, T>::new(self.observer, self.id, #next_state_name::new()))
                             }
                         }
@@ -273,9 +273,9 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                             #constructor
     
                             impl<T: Observer + Send> #parent_name<#state_name, T> {
-                                pub async fn init(mut ctx: T::Context, mut observer: T, id: Option<String>, data: #sdt, state_data: #dt) -> Result<Self, InitError<T::Error>> {
-                                    let id = observer.on_init(&mut ctx, id, State::#state_name, Some(&data), Some(&state_data)).await.map_err(|e| InitError::ObserverError(e))?.ok_or(InitError::EmptyId)?;
-                                    observer.#enter_fn_name(&mut ctx, &id, None, &data, &state_data).await.map_err(|e| InitError::ObserverError(e))?;
+                                pub async fn init(mut ctx: &mut T::Context, mut observer: T, id: Option<String>, data: #sdt, state_data: #dt) -> Result<Self, InitError<T::Error>> {
+                                    let id = observer.on_init(ctx, id, State::#state_name, Some(&data), Some(&state_data)).await.map_err(|e| InitError::ObserverError(e))?.ok_or(InitError::EmptyId)?;
+                                    observer.#enter_fn_name(ctx, &id, None, &data, &state_data).await.map_err(|e| InitError::ObserverError(e))?;
                                     Ok(Self::new(observer, id, #state_name::new(state_data), data))
                                 }
                             }
@@ -284,9 +284,9 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                             #constructor
     
                             impl<T: Observer + Send> #parent_name<#state_name, T> {
-                                pub async fn init(mut ctx: T::Context, mut observer: T, id: Option<String>, data: #sdt) -> Result<Self, InitError<T::Error>> {
-                                    let id = observer.on_init(&mut ctx, id, State::#state_name, Some(&data), Option::<()>::None).await.map_err(|e| InitError::ObserverError(e))?.ok_or(InitError::EmptyId)?;
-                                    observer.#enter_fn_name(&mut ctx, &id, None, &data).await.map_err(|e| InitError::ObserverError(e))?;
+                                pub async fn init(mut ctx: &mut T::Context, mut observer: T, id: Option<String>, data: #sdt) -> Result<Self, InitError<T::Error>> {
+                                    let id = observer.on_init(ctx, id, State::#state_name, Some(&data), Option::<()>::None).await.map_err(|e| InitError::ObserverError(e))?.ok_or(InitError::EmptyId)?;
+                                    observer.#enter_fn_name(ctx, &id, None, &data).await.map_err(|e| InitError::ObserverError(e))?;
                                     Ok(Self::new(observer, id, #state_name::new(), data))
                                 }
                             }
@@ -316,9 +316,9 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                             #constructor
     
                             impl<T: Observer + Send> #parent_name<#state_name, T> {
-                                pub async fn init(mut ctx: T::Context, mut observer: T, id: Option<String>, state_data: #dt) -> Result<Self, InitError<T::Error>> {
-                                    let id = observer.on_init(&mut ctx, id, State::#state_name, Option::<()>::None, Some(&state_data)).await.map_err(|e| InitError::ObserverError(e))?.ok_or(InitError::EmptyId)?;
-                                    observer.#enter_fn_name(&mut ctx, &id, None, &state_data).await.map_err(|e| InitError::ObserverError(e))?;
+                                pub async fn init(mut ctx: &mut T::Context, mut observer: T, id: Option<String>, state_data: #dt) -> Result<Self, InitError<T::Error>> {
+                                    let id = observer.on_init(ctx, id, State::#state_name, Option::<()>::None, Some(&state_data)).await.map_err(|e| InitError::ObserverError(e))?.ok_or(InitError::EmptyId)?;
+                                    observer.#enter_fn_name(ctx, &id, None, &state_data).await.map_err(|e| InitError::ObserverError(e))?;
                                     Ok(Self::new(observer, id, #state_name::new(state_data)))
                                 }
                             }
@@ -327,9 +327,9 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                             #constructor
     
                             impl<T: Observer + Send> #parent_name<#state_name, T> {
-                                pub async fn init(mut ctx: T::Context, mut observer: T, id: Option<String>) -> Result<Self, InitError<T::Error>> {
-                                    let id = observer.on_init(&mut ctx, id, State::#state_name, Option::<()>::None, Option::<()>::None).await.map_err(|e| InitError::ObserverError(e))?.ok_or(InitError::EmptyId)?;
-                                    observer.#enter_fn_name(&mut ctx, &id, None).await.map_err(|e| InitError::ObserverError(e))?;
+                                pub async fn init(mut ctx: &mut T::Context, mut observer: T, id: Option<String>) -> Result<Self, InitError<T::Error>> {
+                                    let id = observer.on_init(ctx, id, State::#state_name, Option::<()>::None, Option::<()>::None).await.map_err(|e| InitError::ObserverError(e))?.ok_or(InitError::EmptyId)?;
+                                    observer.#enter_fn_name(ctx, &id, None).await.map_err(|e| InitError::ObserverError(e))?;
                                     Ok(Self::new(observer, id, #state_name::new()))
                                 }
                             }
