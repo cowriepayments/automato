@@ -40,7 +40,7 @@ impl Observer<()> for Log {
 #[test]
 fn init() {
     let _job = block_on(Job::init(
-        (),
+        &mut (),
         Log {},
         Some("foo".to_string()),
         JobData {},
@@ -51,7 +51,7 @@ fn init() {
 
 #[test]
 fn init_without_id() {
-    let result = block_on(Job::init((), Log {}, None, JobData {}, QueuedData {}));
+    let result = block_on(Job::init(&mut (), Log {}, None, JobData {}, QueuedData {}));
     let err = result.err().unwrap();
     match err {
         InitError::EmptyId => {}
@@ -80,7 +80,7 @@ fn init_with_deferred_id() {
     }
 
     let _job = block_on(Job::init(
-        (),
+        &mut (),
         DeferredIdInitLog {},
         None,
         JobData {},
@@ -117,7 +117,7 @@ fn on_init() {
     };
 
     let _job = block_on(Job::init(
-        (),
+        &mut (),
         &mut init_log,
         Some("foo".to_string()),
         JobData {},
@@ -134,7 +134,7 @@ fn on_init() {
 #[test]
 fn read_id() {
     let job = block_on(Job::init(
-        (),
+        &mut (),
         Log {},
         Some("foo".to_string()),
         JobData {},
@@ -149,7 +149,7 @@ fn read_id() {
 #[test]
 fn read_data() {
     let job = block_on(Job::init(
-        (),
+        &mut (),
         Log {},
         Some("foo".to_string()),
         JobData {},
@@ -163,14 +163,14 @@ fn read_data() {
 #[test]
 fn transition() {
     let job = block_on(Job::init(
-        (),
+        &mut (),
         Log {},
         Some("foo".to_string()),
         JobData {},
         QueuedData {},
     ))
     .unwrap();
-    let _job = block_on(job.start((), ProcessingData {})).unwrap();
+    let _job = block_on(job.start(&mut (), ProcessingData {})).unwrap();
 }
 
 #[test]
@@ -205,14 +205,14 @@ fn on_transition() {
     };
 
     let job = block_on(Job::init(
-        (),
+        &mut (),
         &mut transition_log,
         Some("foo".to_string()),
         JobData {},
         QueuedData {},
     ))
     .unwrap();
-    let _job = block_on(job.start((), ProcessingData {})).unwrap();
+    let _job = block_on(job.start(&mut (), ProcessingData {})).unwrap();
 
     match transition_log.from {
         Some(state) => assert_eq!("Queued", state.to_string()),
