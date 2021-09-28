@@ -1,6 +1,4 @@
-use async_trait::async_trait;
 use automato::statemachine;
-use futures::executor::block_on;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::marker::PhantomData;
@@ -32,26 +30,25 @@ statemachine! {
 
 struct Log {}
 
-#[async_trait]
 impl Observer<()> for Log {
     type Error = ();
 }
 
 #[test]
 fn init() {
-    let _job = block_on(Job::init(
+    let _job = Job::init(
         (),
         Log {},
         Some("foo".to_string()),
         JobData {},
         QueuedData {},
-    ))
+    )
     .unwrap();
 }
 
 #[test]
 fn init_without_id() {
-    let result = block_on(Job::init((), Log {}, None, JobData {}, QueuedData {}));
+    let result = Job::init((), Log {}, None, JobData {}, QueuedData {});
     let err = result.err().unwrap();
     match err {
         InitError::EmptyId => {}
@@ -63,11 +60,10 @@ fn init_without_id() {
 fn init_with_deferred_id() {
     struct DeferredIdInitLog {}
 
-    #[async_trait]
     impl Observer<()> for DeferredIdInitLog {
         type Error = ();
 
-        async fn on_init<T: Serialize + Send, U: Serialize + Send>(
+        fn on_init<T: Serialize, U: Serialize>(
             &mut self,
             _ctx: &mut (),
             _id: Option<String>,
@@ -79,14 +75,7 @@ fn init_with_deferred_id() {
         }
     }
 
-    let _job = block_on(Job::init(
-        (),
-        DeferredIdInitLog {},
-        None,
-        JobData {},
-        QueuedData {},
-    ))
-    .unwrap();
+    let _job = Job::init((), DeferredIdInitLog {}, None, JobData {}, QueuedData {}).unwrap();
 }
 
 #[test]
@@ -95,11 +84,10 @@ fn on_init() {
         initiated_to_state: Option<State>,
     }
 
-    #[async_trait]
     impl Observer<()> for &mut InitLog {
         type Error = ();
 
-        async fn on_init<T: Serialize + Send, U: Serialize + Send>(
+        fn on_init<T: Serialize, U: Serialize>(
             &mut self,
             _ctx: &mut (),
             id: Option<String>,
@@ -116,13 +104,13 @@ fn on_init() {
         initiated_to_state: None,
     };
 
-    let _job = block_on(Job::init(
+    let _job = Job::init(
         (),
         &mut init_log,
         Some("foo".to_string()),
         JobData {},
         QueuedData {},
-    ))
+    )
     .unwrap();
 
     match init_log.initiated_to_state {
@@ -133,13 +121,13 @@ fn on_init() {
 
 #[test]
 fn read_id() {
-    let job = block_on(Job::init(
+    let job = Job::init(
         (),
         Log {},
         Some("foo".to_string()),
         JobData {},
         QueuedData {},
-    ))
+    )
     .unwrap();
     let id = job.id();
 
@@ -148,13 +136,13 @@ fn read_id() {
 
 #[test]
 fn read_data() {
-    let job = block_on(Job::init(
+    let job = Job::init(
         (),
         Log {},
         Some("foo".to_string()),
         JobData {},
         QueuedData {},
-    ))
+    )
     .unwrap();
     let _job_data = job.data();
     let _job_state_data = job.state.data();
@@ -162,15 +150,15 @@ fn read_data() {
 
 #[test]
 fn transition() {
-    let job = block_on(Job::init(
+    let job = Job::init(
         (),
         Log {},
         Some("foo".to_string()),
         JobData {},
         QueuedData {},
-    ))
+    )
     .unwrap();
-    let _job = block_on(job.start((), ProcessingData {})).unwrap();
+    let _job = job.start((), ProcessingData {}).unwrap();
 }
 
 #[test]
@@ -180,11 +168,10 @@ fn on_transition() {
         to: Option<State>,
     }
 
-    #[async_trait]
     impl Observer<()> for &mut TransitionLog {
         type Error = ();
 
-        async fn on_transition<T: Serialize + Send, U: Serialize + Send>(
+        fn on_transition<T: Serialize, U: Serialize>(
             &mut self,
             _ctx: &mut (),
             _id: &str,
@@ -204,15 +191,15 @@ fn on_transition() {
         to: None,
     };
 
-    let job = block_on(Job::init(
+    let job = Job::init(
         (),
         &mut transition_log,
         Some("foo".to_string()),
         JobData {},
         QueuedData {},
-    ))
+    )
     .unwrap();
-    let _job = block_on(job.start((), ProcessingData {})).unwrap();
+    let _job = job.start((), ProcessingData {}).unwrap();
 
     match transition_log.from {
         Some(state) => assert_eq!("Queued", state.to_string()),
