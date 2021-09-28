@@ -184,7 +184,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                 Some(a) => match shared_data_type {
                     Some(_) => quote! {
                         impl<S, T: Observer<S>> #parent_name<#state_name, S, T> {
-                            pub fn #event(mut self, mut ctx: &mut S, data: #a) -> Result<#parent_name<#next_state_name, S, T>, TransitionError<T::Error>> {
+                            pub fn #event(mut self, ctx: &mut S, data: #a) -> Result<#parent_name<#next_state_name, S, T>, TransitionError<T::Error>> {
                                 self.observer.on_transition(ctx, &self.id, State::#state_name, State::#next_state_name, Some(&self.data), Some(&data)).map_err(|e| TransitionError::ObserverError(e))?;
                                 #exit_call
                                 self.observer.#enter_fn_name(ctx, &self.id, #enter_from_type, &self.data, &data).map_err(|e| TransitionError::ObserverError(e))?;
@@ -194,7 +194,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                     },
                     None => quote! {
                         impl<S, T: Observer<S>> #parent_name<#state_name, S, T> {
-                            pub fn #event(mut self, mut ctx: &mut S, data: #a) -> Result<#parent_name<#next_state_name, S, T>, TransitionError<T::Error>> {
+                            pub fn #event(mut self, ctx: &mut S, data: #a) -> Result<#parent_name<#next_state_name, S, T>, TransitionError<T::Error>> {
                                 self.observer.on_transition(ctx, &self.id, State::#state_name, State::#next_state_name, Option::<()>::None, Some(&data)).map_err(|e| TransitionError::ObserverError(e))?;
                                 #exit_call
                                 self.observer.#enter_fn_name(ctx, &self.id, #enter_from_type, &data).map_err(|e| TransitionError::ObserverError(e))?;
@@ -206,7 +206,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                 None => match shared_data_type {
                     Some(_) => quote! {
                         impl<S, T: Observer<S>> #parent_name<#state_name, S, T> {
-                            pub fn #event(mut self, mut ctx: &mut S) -> Result<#parent_name<#next_state_name, S, T>, TransitionError<T::Error>> {
+                            pub fn #event(mut self, ctx: &mut S) -> Result<#parent_name<#next_state_name, S, T>, TransitionError<T::Error>> {
                                 self.observer.on_transition(ctx, &self.id, State::#state_name, State::#next_state_name, Some(&self.data), Option::<()>::None).map_err(|e| TransitionError::ObserverError(e))?;
                                 #exit_call
                                 self.observer.#enter_fn_name(ctx, &self.id, #enter_from_type, &self.data).map_err(|e| TransitionError::ObserverError(e))?;
@@ -216,7 +216,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                     },
                     None => quote! {
                         impl<S, T: Observer<S>> #parent_name<#state_name, S, T> {
-                            pub fn #event(mut self, mut ctx: &mut S) -> Result<#parent_name<#next_state_name, S, T>, TransitionError<T::Error>> {
+                            pub fn #event(mut self, ctx: &mut S) -> Result<#parent_name<#next_state_name, S, T>, TransitionError<T::Error>> {
                                 self.observer.on_transition(ctx, &self.id, State::#state_name, State::#next_state_name, Option::<()>::None, Option::<()>::None).map_err(|e| TransitionError::ObserverError(e))?;
                                 #exit_call
                                 self.observer.#enter_fn_name(ctx, &self.id, #enter_from_type).map_err(|e| TransitionError::ObserverError(e))?;
@@ -274,7 +274,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                             #constructor
     
                             impl<S, T: Observer<S>> #parent_name<#state_name, S, T> {
-                                pub fn init(mut ctx: &mut S, mut observer: T, id: Option<String>, data: #sdt, state_data: #dt) -> Result<Self, InitError<T::Error>> {
+                                pub fn init(ctx: &mut S, mut observer: T, id: Option<String>, data: #sdt, state_data: #dt) -> Result<Self, InitError<T::Error>> {
                                     let id = observer.on_init(ctx, id, State::#state_name, Some(&data), Some(&state_data)).map_err(|e| InitError::ObserverError(e))?.ok_or(InitError::EmptyId)?;
                                     observer.#enter_fn_name(ctx, &id, None, &data, &state_data).map_err(|e| InitError::ObserverError(e))?;
                                     Ok(Self::new(observer, id, #state_name::new(state_data), data))
@@ -285,7 +285,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                             #constructor
     
                             impl<S, T: Observer<S>> #parent_name<#state_name, S, T> {
-                                pub fn init(mut ctx: &mut S, mut observer: T, id: Option<String>, data: #sdt) -> Result<Self, InitError<T::Error>> {
+                                pub fn init(ctx: &mut S, mut observer: T, id: Option<String>, data: #sdt) -> Result<Self, InitError<T::Error>> {
                                     let id = observer.on_init(ctx, id, State::#state_name, Some(&data), Option::<()>::None).map_err(|e| InitError::ObserverError(e))?.ok_or(InitError::EmptyId)?;
                                     observer.#enter_fn_name(ctx, &id, None, &data).map_err(|e| InitError::ObserverError(e))?;
                                     Ok(Self::new(observer, id, #state_name::new(), data))
@@ -318,7 +318,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                             #constructor
     
                             impl<S, T: Observer<S>> #parent_name<#state_name, S, T> {
-                                pub fn init(mut ctx: &mut S, mut observer: T, id: Option<String>, state_data: #dt) -> Result<Self, InitError<T::Error>> {
+                                pub fn init(ctx: &mut S, mut observer: T, id: Option<String>, state_data: #dt) -> Result<Self, InitError<T::Error>> {
                                     let id = observer.on_init(ctx, id, State::#state_name, Option::<()>::None, Some(&state_data)).map_err(|e| InitError::ObserverError(e))?.ok_or(InitError::EmptyId)?;
                                     observer.#enter_fn_name(ctx, &id, None, &state_data).map_err(|e| InitError::ObserverError(e))?;
                                     Ok(Self::new(observer, id, #state_name::new(state_data)))
@@ -329,7 +329,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                             #constructor
     
                             impl<S, T: Observer<S>> #parent_name<#state_name, S, T> {
-                                pub fn init(mut ctx: &mut S, mut observer: T, id: Option<String>) -> Result<Self, InitError<T::Error>> {
+                                pub fn init(ctx: &mut S, mut observer: T, id: Option<String>) -> Result<Self, InitError<T::Error>> {
                                     let id = observer.on_init(ctx, id, State::#state_name, Option::<()>::None, Option::<()>::None).map_err(|e| InitError::ObserverError(e))?.ok_or(InitError::EmptyId)?;
                                     observer.#enter_fn_name(ctx, &id, None).map_err(|e| InitError::ObserverError(e))?;
                                     Ok(Self::new(observer, id, #state_name::new()))
@@ -576,7 +576,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
             }
         }
 
-        pub fn retrieve<S, T: Retriever<S> + Observer<S>>(mut ctx: &mut S, mut retriever: T, id: String) -> Result<#wrapped_type<S, T>, RetrieveError<T::RetrieverError>> {
+        pub fn retrieve<S, T: Retriever<S> + Observer<S>>(ctx: &mut S, mut retriever: T, id: String) -> Result<#wrapped_type<S, T>, RetrieveError<T::RetrieverError>> {
             let id_str: &str = &id;
             let (state_string, maybe_data, maybe_state_data) = retriever.on_retrieve(ctx, id_str).map_err(|e| RetrieveError::RetrieverError(e))?;
             restore(retriever, id, state_string, maybe_data, maybe_state_data).map_err(|e| RetrieveError::RestoreError(e))
