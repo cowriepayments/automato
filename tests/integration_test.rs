@@ -1,4 +1,4 @@
-use automato_sync::statemachine;
+use automato_sync_non_mut::statemachine;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::marker::PhantomData;
@@ -37,7 +37,7 @@ impl Observer<()> for Log {
 #[test]
 fn init() {
     let _job = Job::init(
-        (),
+        &mut (),
         Log {},
         Some("foo".to_string()),
         JobData {},
@@ -48,7 +48,7 @@ fn init() {
 
 #[test]
 fn init_without_id() {
-    let result = Job::init((), Log {}, None, JobData {}, QueuedData {});
+    let result = Job::init(&mut (), Log {}, None, JobData {}, QueuedData {});
     let err = result.err().unwrap();
     match err {
         InitError::EmptyId => {}
@@ -75,7 +75,14 @@ fn init_with_deferred_id() {
         }
     }
 
-    let _job = Job::init((), DeferredIdInitLog {}, None, JobData {}, QueuedData {}).unwrap();
+    let _job = Job::init(
+        &mut (),
+        DeferredIdInitLog {},
+        None,
+        JobData {},
+        QueuedData {},
+    )
+    .unwrap();
 }
 
 #[test]
@@ -105,7 +112,7 @@ fn on_init() {
     };
 
     let _job = Job::init(
-        (),
+        &mut (),
         &mut init_log,
         Some("foo".to_string()),
         JobData {},
@@ -122,7 +129,7 @@ fn on_init() {
 #[test]
 fn read_id() {
     let job = Job::init(
-        (),
+        &mut (),
         Log {},
         Some("foo".to_string()),
         JobData {},
@@ -137,7 +144,7 @@ fn read_id() {
 #[test]
 fn read_data() {
     let job = Job::init(
-        (),
+        &mut (),
         Log {},
         Some("foo".to_string()),
         JobData {},
@@ -151,14 +158,14 @@ fn read_data() {
 #[test]
 fn transition() {
     let job = Job::init(
-        (),
+        &mut (),
         Log {},
         Some("foo".to_string()),
         JobData {},
         QueuedData {},
     )
     .unwrap();
-    let _job = job.start((), ProcessingData {}).unwrap();
+    let _job = job.start(&mut (), ProcessingData {}).unwrap();
 }
 
 #[test]
@@ -192,14 +199,14 @@ fn on_transition() {
     };
 
     let job = Job::init(
-        (),
+        &mut (),
         &mut transition_log,
         Some("foo".to_string()),
         JobData {},
         QueuedData {},
     )
     .unwrap();
-    let _job = job.start((), ProcessingData {}).unwrap();
+    let _job = job.start(&mut (), ProcessingData {}).unwrap();
 
     match transition_log.from {
         Some(state) => assert_eq!("Queued", state.to_string()),

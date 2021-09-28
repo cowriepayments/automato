@@ -1,5 +1,5 @@
 [package]
-name = "automato_sync"
+name = "automato_sync_non_mut"
 version = "0.0.1"
 authors = ["Umran Hussein <umran.hussein@gmail.com>"]
 edition = "2018"
