@@ -1,4 +1,4 @@
-use automato::statemachine;
+use automato_sync::statemachine;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::marker::PhantomData;

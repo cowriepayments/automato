@@ -1,6 +1,6 @@
 [package]
-name = "automato"
-version = "21.0.0"
+name = "automato_sync"
+version = "0.0.1"
 authors = ["Umran Hussein <umran.hussein@gmail.com>"]
 edition = "2018"
 description = "a crate to generate state machines enforced at compile time"
@@ -19,5 +19,3 @@ convert_case = "0.4.0"
 [dev-dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-futures = "0.3"
-async-trait = "0.1.50"
