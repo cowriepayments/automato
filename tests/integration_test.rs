@@ -67,13 +67,12 @@ fn init_with_deferred_id() {
     impl Observer<()> for DeferredIdInitLog {
         type Error = ();
 
-        async fn on_init<T: Serialize + Send, U: Serialize + Send>(
+        async fn on_init<'a>(
             &mut self,
             _ctx: &mut (),
+            _to: State<'a>,
             _id: Option<String>,
-            _to: State,
-            _data: Option<T>,
-            _state_data: Option<U>,
+            _data: &JobData,
         ) -> Result<Option<String>, Self::Error> {
             Ok(Some("foo".to_string()))
         }
@@ -92,22 +91,21 @@ fn init_with_deferred_id() {
 #[test]
 fn on_init() {
     struct InitLog {
-        initiated_to_state: Option<State>,
+        initiated_to_state: Option<String>,
     }
 
     #[async_trait]
     impl Observer<()> for &mut InitLog {
         type Error = ();
 
-        async fn on_init<T: Serialize + Send, U: Serialize + Send>(
+        async fn on_init<'a>(
             &mut self,
             _ctx: &mut (),
+            to: State<'a>,
             id: Option<String>,
-            to: State,
-            _data: Option<T>,
-            _state_data: Option<U>,
+            _data: &JobData,
         ) -> Result<Option<String>, Self::Error> {
-            self.initiated_to_state = Some(to);
+            self.initiated_to_state = Some(to.to_string());
             Ok(id)
         }
     }
@@ -126,7 +124,7 @@ fn on_init() {
     .unwrap();
 
     match init_log.initiated_to_state {
-        Some(state) => assert_eq!("Queued", state.to_string()),
+        Some(state) => assert_eq!("Queued", state),
         None => panic!("expected some initiated_to_state value"),
     };
 }
@@ -176,25 +174,24 @@ fn transition() {
 #[test]
 fn on_transition() {
     struct TransitionLog {
-        from: Option<State>,
-        to: Option<State>,
+        from: Option<String>,
+        to: Option<String>,
     }
 
     #[async_trait]
     impl Observer<()> for &mut TransitionLog {
         type Error = ();
 
-        async fn on_transition<T: Serialize + Send, U: Serialize + Send>(
+        async fn on_transition<'a>(
             &mut self,
             _ctx: &mut (),
+            from: State<'a>,
+            to: State<'a>,
             _id: &str,
-            from: State,
-            to: State,
-            _data: Option<T>,
-            _state_data: Option<U>,
+            _data: &JobData,
         ) -> Result<(), Self::Error> {
-            self.from = Some(from);
-            self.to = Some(to);
+            self.from = Some(from.to_string());
+            self.to = Some(to.to_string());
             Ok(())
         }
     }
@@ -215,12 +212,12 @@ fn on_transition() {
     let _job = block_on(job.start(&mut (), ProcessingData {})).unwrap();
 
     match transition_log.from {
-        Some(state) => assert_eq!("Queued", state.to_string()),
+        Some(state) => assert_eq!("Queued", state),
         None => panic!("expected some from value"),
     };
 
     match transition_log.to {
-        Some(state) => assert_eq!("Processing", state.to_string()),
+        Some(state) => assert_eq!("Processing", state),
         None => panic!("expected some to value"),
     };
 }
