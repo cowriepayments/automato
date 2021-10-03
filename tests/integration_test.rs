@@ -31,21 +31,28 @@ statemachine! {
 struct Log {}
 
 impl Observer<()> for Log {
-    type Data = ();
-    type QueuedData = ();
-    type ProcessingData = ();
-    type CompletedData = ();
+    type Data = JobData;
+    type QueuedData = QueuedData;
+    type ProcessingData = ProcessingData;
+    type CompletedData = CompletedData;
     type Error = ();
 }
 
 #[test]
 fn init() {
-    let _job = Job::init(&mut (), Log {}, Some("foo".to_string()), (), ()).unwrap();
+    let _job = Job::init(
+        &mut (),
+        Log {},
+        Some("foo".to_string()),
+        JobData {},
+        QueuedData {},
+    )
+    .unwrap();
 }
 
 #[test]
 fn init_without_id() {
-    let result = Job::init(&mut (), Log {}, None, (), ());
+    let result = Job::init(&mut (), Log {}, None, JobData {}, QueuedData {});
     let err = result.err().unwrap();
     match err {
         InitError::EmptyId => {}
@@ -59,9 +66,9 @@ fn init_with_deferred_id() {
 
     impl Observer<()> for DeferredIdInitLog {
         type Data = JobData;
-        type QueuedData = ();
-        type ProcessingData = ();
-        type CompletedData = ();
+        type QueuedData = QueuedData;
+        type ProcessingData = ProcessingData;
+        type CompletedData = CompletedData;
         type Error = ();
 
         fn on_init<'a>(
@@ -79,7 +86,14 @@ fn init_with_deferred_id() {
         }
     }
 
-    let _job = Job::init(&mut (), DeferredIdInitLog {}, None, JobData {}, ()).unwrap();
+    let _job = Job::init(
+        &mut (),
+        DeferredIdInitLog {},
+        None,
+        JobData {},
+        QueuedData {},
+    )
+    .unwrap();
 }
 
 #[test]
@@ -89,10 +103,10 @@ fn on_init() {
     }
 
     impl Observer<()> for &mut InitLog {
-        type Data = ();
-        type QueuedData = ();
-        type ProcessingData = ();
-        type CompletedData = ();
+        type Data = JobData;
+        type QueuedData = QueuedData;
+        type ProcessingData = ProcessingData;
+        type CompletedData = CompletedData;
         type Error = ();
 
         fn on_init<'a>(
@@ -111,7 +125,14 @@ fn on_init() {
         initiated_to_state: None,
     };
 
-    let _job = Job::init(&mut (), &mut init_log, Some("foo".to_string()), (), ()).unwrap();
+    let _job = Job::init(
+        &mut (),
+        &mut init_log,
+        Some("foo".to_string()),
+        JobData {},
+        QueuedData {},
+    )
+    .unwrap();
 
     match init_log.initiated_to_state {
         Some(state) => assert_eq!("Queued", state),
@@ -121,7 +142,14 @@ fn on_init() {
 
 #[test]
 fn read_id() {
-    let job = Job::init(&mut (), Log {}, Some("foo".to_string()), (), ()).unwrap();
+    let job = Job::init(
+        &mut (),
+        Log {},
+        Some("foo".to_string()),
+        JobData {},
+        QueuedData {},
+    )
+    .unwrap();
     let id = job.id();
 
     assert_eq!(id, "foo");
@@ -129,15 +157,29 @@ fn read_id() {
 
 #[test]
 fn read_data() {
-    let job = Job::init(&mut (), Log {}, Some("foo".to_string()), (), ()).unwrap();
+    let job = Job::init(
+        &mut (),
+        Log {},
+        Some("foo".to_string()),
+        JobData {},
+        QueuedData {},
+    )
+    .unwrap();
     let _job_data = job.data();
     let _job_state_data = job.state.data();
 }
 
 #[test]
 fn transition() {
-    let job = Job::init(&mut (), Log {}, Some("foo".to_string()), (), ()).unwrap();
-    let _job = job.start(&mut (), ()).unwrap();
+    let job = Job::init(
+        &mut (),
+        Log {},
+        Some("foo".to_string()),
+        JobData {},
+        QueuedData {},
+    )
+    .unwrap();
+    let _job = job.start(&mut (), ProcessingData {}).unwrap();
 }
 
 #[test]
@@ -148,10 +190,10 @@ fn on_transition() {
     }
 
     impl Observer<()> for &mut TransitionLog {
-        type Data = ();
-        type QueuedData = ();
-        type ProcessingData = ();
-        type CompletedData = ();
+        type Data = JobData;
+        type QueuedData = QueuedData;
+        type ProcessingData = ProcessingData;
+        type CompletedData = CompletedData;
         type Error = ();
 
         fn on_transition<'a>(
@@ -177,11 +219,11 @@ fn on_transition() {
         &mut (),
         &mut transition_log,
         Some("foo".to_string()),
-        (),
-        (),
+        JobData {},
+        QueuedData {},
     )
     .unwrap();
-    let _job = job.start(&mut (), ()).unwrap();
+    let _job = job.start(&mut (), ProcessingData {}).unwrap();
 
     match transition_log.from {
         Some(state) => assert_eq!("Queued", state),
