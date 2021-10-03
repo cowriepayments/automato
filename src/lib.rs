@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use proc_macro::TokenStream;
-use syn::{ parse_macro_input, braced, token, Ident, Result, Token };
+use syn::{ parse_macro_input, braced, Ident, Type, token, Result, Token };
 use syn::parse::{ Parse, ParseStream };
 use syn::punctuated::Punctuated;
 use quote::{quote, format_ident};
@@ -8,7 +8,7 @@ use convert_case::{Case, Casing};
 
 struct Machine {
     name: Ident,
-    shared_data_type: Option<Ident>,
+    shared_data_type: Option<Type>,
     #[allow(dead_code)]
     brace_token: token::Brace,
     states: Punctuated<StateDefinition, Token![,]>
@@ -17,7 +17,7 @@ struct Machine {
 struct StateDefinition {
     init: bool,
     name: Ident,
-    associated_data_type: Option<Ident>,
+    associated_data_type: Option<Type>,
     #[allow(dead_code)]
     brace_token: token::Brace,
     transitions: Punctuated<StateTransition, Token![,]>
@@ -34,7 +34,7 @@ impl Parse for Machine {
     fn parse(input: ParseStream) -> Result<Self> {
         let name: Ident = input.parse()?;
         
-        let mut shared_data_type: Option<Ident> = None;
+        let mut shared_data_type: Option<Type> = None;
         let colon: Result<Token![:]> = input.parse();
         if colon.is_ok() {
             shared_data_type = Some(input.parse()?);
@@ -63,7 +63,7 @@ impl Parse for StateDefinition {
             name = x;
         }
 
-        let mut associated_data_type: Option<Ident> = None;
+        let mut associated_data_type: Option<Type> = None;
         let colon: Result<Token![:]> = input.parse();
         if colon.is_ok() {
             associated_data_type = Some(input.parse()?);
@@ -100,46 +100,36 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
         if state.init {
             init_states.insert(&state.name);
         };
-        if let Some(dt) = &state.associated_data_type {
-            state_data_types.insert(&state.name, dt);
-        }
+        match &state.associated_data_type {
+            Some(dt) => state_data_types.insert(&state.name, dt.to_owned()),
+            None => state_data_types.insert(&state.name, Type::Verbatim(quote!(())))
+        };
     }
 
     let state_names: Vec<&Ident> = m.states.iter().map(|x| &x.name).collect();
 
     let parent_name = &m.name;
     let wrapped_type = format_ident!("{}{}", "Wrapped", parent_name);
-    let shared_data_type = &m.shared_data_type;
+    let shared_data_type = m.shared_data_type.or(Some(Type::Verbatim(quote!(())))).unwrap();
     
     let state_structs = m.states.iter().map(|x| {
         let state_name = &x.name;
-        let data_type = &x.associated_data_type;
+        let data_type = state_data_types.get(state_name).unwrap();
 
-        match data_type {
-            Some(dt) => quote! {
-                pub struct #state_name {
-                    data: #dt
-                }
+        quote! {
+            pub struct #state_name {
+                data: #data_type
+            }
 
-                impl #state_name {
-                    fn new(data: #dt) -> Self {
-                        Self {
-                            data
-                        }
-                    }
-
-                    pub fn data(&self) -> &#dt {
-                        &self.data
+            impl #state_name {
+                fn new(data: #data_type) -> Self {
+                    Self {
+                        data
                     }
                 }
-            },
-            None => quote! {
-                pub struct #state_name {}
 
-                impl #state_name {
-                    fn new() -> Self {
-                        Self {}
-                    }
+                pub fn data(&self) -> &#data_type {
+                    &self.data
                 }
             }
         }
@@ -152,26 +142,11 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
         let transitions = x.transitions.iter().map(|y| {
             let event = &y.event;
             let next_state_name = &y.next_state;
-            let arg = state_data_types.get(next_state_name);
+            let arg = state_data_types.get(next_state_name).unwrap();
             let enter_fn_name = format_ident!("{}_{}", "on_enter", next_state_name.to_string().to_case(Case::Snake));
 
-            let exit_call = match shared_data_type {
-                Some(_) => match state_data_types.get(state_name) {
-                    Some(_) => quote! {
-                        self.observer.#exit_fn_name(ctx, &self.id, State::#next_state_name, &self.data, &self.state.data).await.map_err(|e| TransitionError::ObserverError(e))?;
-                    },
-                    None => quote! {
-                        self.observer.#exit_fn_name(ctx, &self.id, State::#next_state_name, &self.data).await.map_err(|e| TransitionError::ObserverError(e))?;
-                    }
-                },
-                None => match state_data_types.get(state_name) {
-                    Some(_) => quote! {
-                        self.observer.#exit_fn_name(ctx, &self.id, State::#next_state_name, &self.state.data).await.map_err(|e| TransitionError::ObserverError(e))?;
-                    },
-                    None => quote! {
-                        self.observer.#exit_fn_name(ctx, &self.id, State::#next_state_name).await.map_err(|e| TransitionError::ObserverError(e))?;
-                    }
-                }
+            let exit_call = quote! {
+                self.observer.#exit_fn_name(ctx, &self.id, State::#next_state_name, &self.data, &self.state.data).await.map_err(|e| TransitionError::ObserverError(e))?;
             };
 
             let enter_from_type = if init_states.contains(next_state_name) {
@@ -180,49 +155,13 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                 quote!(State::#state_name)
             };
 
-            match arg {
-                Some(a) => match shared_data_type {
-                    Some(_) => quote! {
-                        impl<S: Send, T: Observer<S> + Send> #parent_name<#state_name, S, T> {
-                            pub async fn #event(mut self, ctx: &mut S, data: #a) -> Result<#parent_name<#next_state_name, S, T>, TransitionError<T::Error>> {
-                                self.observer.on_transition(ctx, &self.id, State::#state_name, State::#next_state_name, Some(&self.data), Some(&data)).await.map_err(|e| TransitionError::ObserverError(e))?;
-                                #exit_call
-                                self.observer.#enter_fn_name(ctx, &self.id, #enter_from_type, &self.data, &data).await.map_err(|e| TransitionError::ObserverError(e))?;
-                                Ok(#parent_name::<#next_state_name, S, T>::new(self.observer, self.id, #next_state_name::new(data), self.data))
-                            }
-                        }
-                    },
-                    None => quote! {
-                        impl<S: Send, T: Observer<S> + Send> #parent_name<#state_name, S, T> {
-                            pub async fn #event(mut self, ctx: &mut S, data: #a) -> Result<#parent_name<#next_state_name, S, T>, TransitionError<T::Error>> {
-                                self.observer.on_transition(ctx, &self.id, State::#state_name, State::#next_state_name, Option::<()>::None, Some(&data)).await.map_err(|e| TransitionError::ObserverError(e))?;
-                                #exit_call
-                                self.observer.#enter_fn_name(ctx, &self.id, #enter_from_type, &data).await.map_err(|e| TransitionError::ObserverError(e))?;
-                                Ok(#parent_name::<#next_state_name, S, T>::new(self.observer, self.id, #next_state_name::new(data)))
-                            }
-                        }
-                    }
-                },
-                None => match shared_data_type {
-                    Some(_) => quote! {
-                        impl<S: Send, T: Observer<S> + Send> #parent_name<#state_name, S, T> {
-                            pub async fn #event(mut self, ctx: &mut S) -> Result<#parent_name<#next_state_name, S, T>, TransitionError<T::Error>> {
-                                self.observer.on_transition(ctx, &self.id, State::#state_name, State::#next_state_name, Some(&self.data), Option::<()>::None).await.map_err(|e| TransitionError::ObserverError(e))?;
-                                #exit_call
-                                self.observer.#enter_fn_name(ctx, &self.id, #enter_from_type, &self.data).await.map_err(|e| TransitionError::ObserverError(e))?;
-                                Ok(#parent_name::<#next_state_name, S, T>::new(self.observer, self.id, #next_state_name::new(), self.data))
-                            }
-                        }
-                    },
-                    None => quote! {
-                        impl<S: Send, T: Observer<S> + Send> #parent_name<#state_name, S, T> {
-                            pub async fn #event(mut self, ctx: &mut S) -> Result<#parent_name<#next_state_name, S, T>, TransitionError<T::Error>> {
-                                self.observer.on_transition(ctx, &self.id, State::#state_name, State::#next_state_name, Option::<()>::None, Option::<()>::None).await.map_err(|e| TransitionError::ObserverError(e))?;
-                                #exit_call
-                                self.observer.#enter_fn_name(ctx, &self.id, #enter_from_type).await.map_err(|e| TransitionError::ObserverError(e))?;
-                                Ok(#parent_name::<#next_state_name, S, T>::new(self.observer, self.id, #next_state_name::new()))
-                            }
-                        }
+            quote! {
+                impl<S: Send, T: Observer<S> + Send> #parent_name<#state_name, S, T> {
+                    pub async fn #event(mut self, ctx: &mut S, data: #arg) -> Result<#parent_name<#next_state_name, S, T>, TransitionError<T::Error>> {
+                        self.observer.on_transition(ctx, &self.id, State::#state_name, State::#next_state_name, Some(&self.data), Some(&data)).await.map_err(|e| TransitionError::ObserverError(e))?;
+                        #exit_call
+                        self.observer.#enter_fn_name(ctx, &self.id, #enter_from_type, &self.data, &data).await.map_err(|e| TransitionError::ObserverError(e))?;
+                        Ok(#parent_name::<#next_state_name, S, T>::new(self.observer, self.id, #next_state_name::new(data), self.data))
                     }
                 }
             }
@@ -237,6 +176,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
 
     let parent_state_impls = m.states.iter().map(|x| {
         let state_name = &x.name;
+        let state_data_type = state_data_types.get(state_name).unwrap();
         let enter_fn_name = format_ident!("{}_{}", "on_enter", state_name.to_string().to_case(Case::Snake));
 
         let common_methods = quote! {
@@ -245,193 +185,71 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
             }
         };
 
-        match shared_data_type {
-            Some(sdt) => {
-                let constructor = quote! {
-                    impl<S: Send, T: Observer<S> + Send> #parent_name<#state_name, S, T> {
-                        fn new(observer: T, id: String, state: #state_name, data: #sdt) -> Self {
-                            Self {
-                                observer,
-                                id,
-                                state,
-                                data,
-                                phantom: PhantomData
-                            }
-                        }
-
-                        pub fn data(&self) -> &#sdt {
-                            &self.data
-                        }
-
-                        #common_methods
-                    }
-                };
-
-                match x.init {
-                    false => constructor,
-                    true => match &x.associated_data_type {
-                        Some(dt) => quote! {
-                            #constructor
-    
-                            impl<S: Send, T: Observer<S> + Send> #parent_name<#state_name, S, T> {
-                                pub async fn init(ctx: &mut S, mut observer: T, id: Option<String>, data: #sdt, state_data: #dt) -> Result<Self, InitError<T::Error>> {
-                                    let id = observer.on_init(ctx, id, State::#state_name, Some(&data), Some(&state_data)).await.map_err(|e| InitError::ObserverError(e))?.ok_or(InitError::EmptyId)?;
-                                    observer.#enter_fn_name(ctx, &id, None, &data, &state_data).await.map_err(|e| InitError::ObserverError(e))?;
-                                    Ok(Self::new(observer, id, #state_name::new(state_data), data))
-                                }
-                            }
-                        },
-                        None => quote! {
-                            #constructor
-    
-                            impl<S: Send, T: Observer<S> + Send> #parent_name<#state_name, S, T> {
-                                pub async fn init(ctx: &mut S, mut observer: T, id: Option<String>, data: #sdt) -> Result<Self, InitError<T::Error>> {
-                                    let id = observer.on_init(ctx, id, State::#state_name, Some(&data), Option::<()>::None).await.map_err(|e| InitError::ObserverError(e))?.ok_or(InitError::EmptyId)?;
-                                    observer.#enter_fn_name(ctx, &id, None, &data).await.map_err(|e| InitError::ObserverError(e))?;
-                                    Ok(Self::new(observer, id, #state_name::new(), data))
-                                }
-                            }
-                        }
+        let constructor = quote! {
+            impl<S: Send, T: Observer<S> + Send> #parent_name<#state_name, S, T> {
+                fn new(observer: T, id: String, state: #state_name, data: #shared_data_type) -> Self {
+                    Self {
+                        observer,
+                        id,
+                        state,
+                        data,
+                        phantom: PhantomData
                     }
                 }
-            },
-            None => {
-                let constructor = quote! {
-                    impl<S: Send, T: Observer<S> + Send> #parent_name<#state_name, S, T> {
-                        fn new(observer: T, id: String, state: #state_name) -> Self {
-                            Self {
-                                observer,
-                                id,
-                                state,
-                                phantom: PhantomData
-                            }
-                        }
 
-                        #common_methods
-                    }
-                };
+                pub fn data(&self) -> &#shared_data_type {
+                    &self.data
+                }
 
-                match x.init {
-                    false => constructor,
-                    true => match &x.associated_data_type {
-                        Some(dt) => quote! {
-                            #constructor
-    
-                            impl<S: Send, T: Observer<S> + Send> #parent_name<#state_name, S, T> {
-                                pub async fn init(ctx: &mut S, mut observer: T, id: Option<String>, state_data: #dt) -> Result<Self, InitError<T::Error>> {
-                                    let id = observer.on_init(ctx, id, State::#state_name, Option::<()>::None, Some(&state_data)).await.map_err(|e| InitError::ObserverError(e))?.ok_or(InitError::EmptyId)?;
-                                    observer.#enter_fn_name(ctx, &id, None, &state_data).await.map_err(|e| InitError::ObserverError(e))?;
-                                    Ok(Self::new(observer, id, #state_name::new(state_data)))
-                                }
-                            }
-                        },
-                        None => quote! {
-                            #constructor
-    
-                            impl<S: Send, T: Observer<S> + Send> #parent_name<#state_name, S, T> {
-                                pub async fn init(ctx: &mut S, mut observer: T, id: Option<String>) -> Result<Self, InitError<T::Error>> {
-                                    let id = observer.on_init(ctx, id, State::#state_name, Option::<()>::None, Option::<()>::None).await.map_err(|e| InitError::ObserverError(e))?.ok_or(InitError::EmptyId)?;
-                                    observer.#enter_fn_name(ctx, &id, None).await.map_err(|e| InitError::ObserverError(e))?;
-                                    Ok(Self::new(observer, id, #state_name::new()))
-                                }
-                            }
-                        }
+                #common_methods
+            }
+        };
+
+        match x.init {
+            false => constructor,
+            true => quote! {
+                #constructor
+
+                impl<S: Send, T: Observer<S> + Send> #parent_name<#state_name, S, T> {
+                    pub async fn init(ctx: &mut S, mut observer: T, id: Option<String>, data: #shared_data_type, state_data: #state_data_type) -> Result<Self, InitError<T::Error>> {
+                        let id = observer.on_init(ctx, id, State::#state_name, Some(&data), Some(&state_data)).await.map_err(|e| InitError::ObserverError(e))?.ok_or(InitError::EmptyId)?;
+                        observer.#enter_fn_name(ctx, &id, None, &data, &state_data).await.map_err(|e| InitError::ObserverError(e))?;
+                        Ok(Self::new(observer, id, #state_name::new(state_data), data))
                     }
                 }
             }
         }
     });
 
-    let parent_struct = match shared_data_type {
-        Some(sdt) => quote! {
-            pub struct #parent_name<S, T: Send, U: Observer<T> + Send> {
-                observer: U,
-                id: String,
-                pub state: S,
-                data: #sdt,
-                phantom: PhantomData<T>
-            }
-        },
-        None => quote! {
-            pub struct #parent_name<S, T: Send, U: Observer<T> + Send> {
-                observer: U,
-                id: String,
-                pub state: S,
-                phantom: PhantomData<T>
-            }
+    let parent_struct = quote! {
+        pub struct #parent_name<S, T: Send, U: Observer<T> + Send> {
+            observer: U,
+            id: String,
+            pub state: S,
+            data: #shared_data_type,
+            phantom: PhantomData<T>
         }
     };
 
     let restore_fns = m.states.iter().map(|x| {
         let state_name = &x.name;
-        let expected_state_dt = state_data_types.get(state_name);
+        let state_data_type = state_data_types.get(state_name).unwrap();
 
         let fn_name = format_ident!("{}_{}", "restore", state_name.to_string().to_case(Case::Snake));
 
-        match shared_data_type {
-            Some(shared_dt) => {
-                match expected_state_dt {
-                    Some(state_dt) => quote! {
-                        async fn #fn_name<S: Send, T: Observer<S> + Send>(mut observer: T, id: String, shared_d_enc: Option<Encoded>, state_d_enc: Option<Encoded>) -> Result<#wrapped_type<S, T>, RestoreError> {
-                            let shared_d_enc_some = shared_d_enc.ok_or(RestoreError::EmptyData)?;
-                            let shared_d: #shared_dt = match shared_d_enc_some {
-                                Encoded::Json(data) => serde_json::from_value(data).ok().ok_or(RestoreError::InvalidData)?
-                            };
+        quote! {
+            async fn #fn_name<S: Send, T: Observer<S> + Send>(mut observer: T, id: String, shared_d_enc: Option<Encoded>, state_d_enc: Option<Encoded>) -> Result<#wrapped_type<S, T>, RestoreError> {
+                let shared_d_enc_some = shared_d_enc.ok_or(RestoreError::EmptyData)?;
+                let shared_d: #shared_data_type = match shared_d_enc_some {
+                    Encoded::Json(data) => serde_json::from_value(data).ok().ok_or(RestoreError::InvalidData)?
+                };
 
-                            let state_d_enc_some = state_d_enc.ok_or(RestoreError::EmptyData)?;
-                            let state_d: #state_dt = match state_d_enc_some {
-                                Encoded::Json(data) => serde_json::from_value(data).ok().ok_or(RestoreError::InvalidData)?
-                            };
+                let state_d_enc_some = state_d_enc.ok_or(RestoreError::EmptyData)?;
+                let state_d: #state_data_type = match state_d_enc_some {
+                    Encoded::Json(data) => serde_json::from_value(data).ok().ok_or(RestoreError::InvalidData)?
+                };
 
-                            Ok(#wrapped_type::#state_name(#parent_name::<#state_name, S, T>::new(observer, id, #state_name::new(state_d), shared_d)))
-                        }
-                    },
-                    None => quote! {
-                        async fn #fn_name<S: Send, T: Observer<S> + Send>(mut observer: T, id: String, shared_d_enc: Option<Encoded>, state_d_enc: Option<Encoded>) -> Result<#wrapped_type<S, T>, RestoreError> {
-                            let shared_d_enc_some = shared_d_enc.ok_or(RestoreError::EmptyData)?;
-                            let shared_d: #shared_dt = match shared_d_enc_some {
-                                Encoded::Json(data) => serde_json::from_value(data).ok().ok_or(RestoreError::InvalidData)?
-                            };
-
-                            if state_d_enc.is_some() {
-                                return Err(RestoreError::UnexpectedData)
-                            };
-
-                            Ok(#wrapped_type::#state_name(#parent_name::<#state_name, S, T>::new(observer, id, #state_name::new(), shared_d)))
-                        }
-                    }
-                }
-            },
-            None => {
-                match expected_state_dt {
-                    Some(state_dt) => quote! {
-                        async fn #fn_name<S: Send, T: Observer + Send>(mut observer: T, id: String, shared_d_enc: Option<Encoded>, state_d_enc: Option<Encoded>) -> Result<#wrapped_type<S, T>, RestoreError> {
-                            if shared_d_enc.is_some() {
-                                return Err(RestoreError::UnexpectedData)
-                            };
-
-                            let state_d_enc_some = state_d_enc.ok_or(RestoreError::EmptyData)?;
-                            let state_d: #state_dt = match state_d_enc_some {
-                                Encoded::Json(data) => serde_json::from_value(data).ok().ok_or(RestoreError::InvalidData)?
-                            };
-
-                            Ok(#wrapped_type::#state_name(#parent_name::<#state_name, S, T>::new(observer, id, #state_name::new(state_d))))
-                        }
-                    },
-                    None => quote! {
-                        async fn #fn_name<S: Send, T: Observer + Send>(mut observer: T, id: String, shared_d_enc: Option<Encoded>, state_d_enc: Option<Encoded>) -> Result<#wrapped_type<S, T>, RestoreError> {
-                            if shared_d_enc.is_some() {
-                                return Err(RestoreError::UnexpectedData)
-                            };
-
-                            if state_d_enc.is_some() {
-                                return Err(RestoreError::UnexpectedData)
-                            };
-
-                            Ok(#wrapped_type::#state_name(#parent_name::<#state_name, S, T>::new(observer, id, #state_name::new())))
-                        }
-                    }
-                }
+                Ok(#wrapped_type::#state_name(#parent_name::<#state_name, S, T>::new(observer, id, #state_name::new(state_d), shared_d)))
             }
         }
     });
@@ -444,6 +262,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
 
     let listeners = m.states.iter().map(|x| {
         let state_name = &x.name;
+        let state_data_type = state_data_types.get(state_name).unwrap();
         let enter_fn_name = format_ident!("{}_{}", "on_enter", state_name.to_string().to_case(Case::Snake));
         let exit_fn_name = format_ident!("{}_{}", "on_exit", state_name.to_string().to_case(Case::Snake));
 
@@ -452,47 +271,15 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
         } else {
             quote!(State)
         };
-
-        let maybe_data_type = state_data_types.get(state_name);
-        match shared_data_type {
-            Some(sdt) => match maybe_data_type {
-                Some(data_type) => quote! {
-                    async fn #enter_fn_name(&mut self, ctx: &mut S, id: &str, from: #from_type, data: &#sdt, state_data: &#data_type) -> Result<(), Self::Error> {
-                        Ok(())
-                    }
-                    async fn #exit_fn_name(&mut self, ctx: &mut S, id: &str, to: State, data: &#sdt, state_data: &#data_type) -> Result<(), Self::Error> {
-                        Ok(())
-                    }
-                },
-                None => quote! {
-                    async fn #enter_fn_name(&mut self, ctx: &mut S, id: &str, from: #from_type, data: &#sdt) -> Result<(), Self::Error> {
-                        Ok(())
-                    }
-                    async fn #exit_fn_name(&mut self, ctx: &mut S, id: &str, to: State, data: &#sdt) -> Result<(), Self::Error> {
-                        Ok(())
-                    }
-                }
-            },
-            None => match maybe_data_type {
-                Some(data_type) => quote! {
-                    async fn #enter_fn_name(&mut self, ctx: &mut S, id: &str, from: #from_type, state_data: &#data_type) -> Result<(), Self::Error> {
-                        Ok(())
-                    }
-                    async fn #exit_fn_name(&mut self, ctx: &mut S, id: &str, to: State, state_data: &#data_type) -> Result<(), Self::Error> {
-                        Ok(())
-                    }
-                },
-                None => quote! {
-                    async fn #enter_fn_name(&mut self, ctx: &mut S, id: &str, from: #from_type) -> Result<(), Self::Error> {
-                        Ok(())
-                    }
-                    async fn #exit_fn_name(&mut self, ctx: &mut S, id: &str, to: State) -> Result<(), Self::Error> {
-                        Ok(())
-                    }
-                }
+        
+        quote! {
+            async fn #enter_fn_name(&mut self, ctx: &mut S, id: &str, from: #from_type, data: &#shared_data_type, state_data: &#state_data_type) -> Result<(), Self::Error> {
+                Ok(())
+            }
+            async fn #exit_fn_name(&mut self, ctx: &mut S, id: &str, to: State, data: &#shared_data_type, state_data: &#state_data_type) -> Result<(), Self::Error> {
+                Ok(())
             }
         }
-
     });
 
     let out = quote! {
