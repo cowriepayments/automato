@@ -114,21 +114,21 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
     
     let state_structs = m.states.iter().map(|x| {
         let state_name = &x.name;
-        let data_type = state_data_types.get(state_name).unwrap();
+        let state_data_type = state_data_types.get(state_name).unwrap();
 
         quote! {
             pub struct #state_name {
-                data: #data_type
+                data: #state_data_type
             }
 
             impl #state_name {
-                fn new(data: #data_type) -> Self {
+                fn new(data: #state_data_type) -> Self {
                     Self {
                         data
                     }
                 }
 
-                pub fn data(&self) -> &#data_type {
+                pub fn data(&self) -> &#state_data_type {
                     &self.data
                 }
             }
@@ -142,26 +142,26 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
         let transitions = x.transitions.iter().map(|y| {
             let event = &y.event;
             let next_state_name = &y.next_state;
-            let arg = state_data_types.get(next_state_name).unwrap();
+            let next_state_data_type = state_data_types.get(next_state_name).unwrap();
             let enter_fn_name = format_ident!("{}_{}", "on_enter", next_state_name.to_string().to_case(Case::Snake));
 
             let exit_call = quote! {
-                self.observer.#exit_fn_name(ctx, &self.id, State::#next_state_name, &self.data, &self.state.data).await.map_err(|e| TransitionError::ObserverError(e))?;
+                self.observer.#exit_fn_name(ctx, State::#next_state_name(&next_state_data), &self.id, &self.data, &self.state.data).await.map_err(|e| TransitionError::ObserverError(e))?;
             };
 
-            let enter_from_type = if init_states.contains(next_state_name) {
-                quote!(Some(State::#state_name))
+            let enter_from_value = if init_states.contains(next_state_name) {
+                quote!(Some(State::#state_name(self.state.data())))
             } else {
-                quote!(State::#state_name)
+                quote!(State::#state_name(self.state.data()))
             };
 
             quote! {
                 impl<S: Send, T: Observer<S> + Send> #parent_name<#state_name, S, T> {
-                    pub async fn #event(mut self, ctx: &mut S, data: #arg) -> Result<#parent_name<#next_state_name, S, T>, TransitionError<T::Error>> {
-                        self.observer.on_transition(ctx, &self.id, State::#state_name, State::#next_state_name, Some(&self.data), Some(&data)).await.map_err(|e| TransitionError::ObserverError(e))?;
+                    pub async fn #event(mut self, ctx: &mut S, next_state_data: #next_state_data_type) -> Result<#parent_name<#next_state_name, S, T>, TransitionError<T::Error>> {
+                        self.observer.on_transition(ctx, State::#state_name(self.state.data()), State::#next_state_name(&next_state_data), &self.id, &self.data).await.map_err(|e| TransitionError::ObserverError(e))?;
                         #exit_call
-                        self.observer.#enter_fn_name(ctx, &self.id, #enter_from_type, &self.data, &data).await.map_err(|e| TransitionError::ObserverError(e))?;
-                        Ok(#parent_name::<#next_state_name, S, T>::new(self.observer, self.id, #next_state_name::new(data), self.data))
+                        self.observer.#enter_fn_name(ctx, #enter_from_value, &self.id, &self.data, &next_state_data).await.map_err(|e| TransitionError::ObserverError(e))?;
+                        Ok(#parent_name::<#next_state_name, S, T>::new(self.observer, self.id, #next_state_name::new(next_state_data), self.data))
                     }
                 }
             }
@@ -211,10 +211,10 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                 #constructor
 
                 impl<S: Send, T: Observer<S> + Send> #parent_name<#state_name, S, T> {
-                    pub async fn init(ctx: &mut S, mut observer: T, id: Option<String>, data: #shared_data_type, state_data: #state_data_type) -> Result<Self, InitError<T::Error>> {
-                        let id = observer.on_init(ctx, id, State::#state_name, Some(&data), Some(&state_data)).await.map_err(|e| InitError::ObserverError(e))?.ok_or(InitError::EmptyId)?;
-                        observer.#enter_fn_name(ctx, &id, None, &data, &state_data).await.map_err(|e| InitError::ObserverError(e))?;
-                        Ok(Self::new(observer, id, #state_name::new(state_data), data))
+                    pub async fn init(ctx: &mut S, mut observer: T, id: Option<String>, shared_data: #shared_data_type, state_data: #state_data_type) -> Result<Self, InitError<T::Error>> {
+                        let id = observer.on_init(ctx, State::#state_name(&state_data), id, &shared_data).await.map_err(|e| InitError::ObserverError(e))?.ok_or(InitError::EmptyId)?;
+                        observer.#enter_fn_name(ctx, None, &id, &shared_data, &state_data).await.map_err(|e| InitError::ObserverError(e))?;
+                        Ok(Self::new(observer, id, #state_name::new(state_data), shared_data))
                     }
                 }
             }
@@ -238,14 +238,12 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
         let fn_name = format_ident!("{}_{}", "restore", state_name.to_string().to_case(Case::Snake));
 
         quote! {
-            async fn #fn_name<S: Send, T: Observer<S> + Send>(mut observer: T, id: String, shared_d_enc: Option<Encoded>, state_d_enc: Option<Encoded>) -> Result<#wrapped_type<S, T>, RestoreError> {
-                let shared_d_enc_some = shared_d_enc.ok_or(RestoreError::EmptyData)?;
-                let shared_d: #shared_data_type = match shared_d_enc_some {
+            async fn #fn_name<S: Send, T: Observer<S> + Send>(mut observer: T, id: String, shared_d_enc: Encoded, state_d_enc: Encoded) -> Result<#wrapped_type<S, T>, RestoreError> {
+                let shared_d: #shared_data_type = match shared_d_enc {
                     Encoded::Json(data) => serde_json::from_value(data).ok().ok_or(RestoreError::InvalidData)?
                 };
 
-                let state_d_enc_some = state_d_enc.ok_or(RestoreError::EmptyData)?;
-                let state_d: #state_data_type = match state_d_enc_some {
+                let state_d: #state_data_type = match state_d_enc {
                     Encoded::Json(data) => serde_json::from_value(data).ok().ok_or(RestoreError::InvalidData)?
                 };
 
@@ -257,7 +255,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
     let restore_arms = m.states.iter().map(|x| {
         let state_name = &x.name;
         let fn_name = format_ident!("{}_{}", "restore", state_name.to_string().to_case(Case::Snake));
-        quote!(stringify!(#state_name) => #fn_name(observer, id, data, state_data).await)
+        quote!(stringify!(#state_name) => #fn_name(observer, id, shared_data, state_data).await)
     });
 
     let listeners = m.states.iter().map(|x| {
@@ -267,18 +265,26 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
         let exit_fn_name = format_ident!("{}_{}", "on_exit", state_name.to_string().to_case(Case::Snake));
 
         let from_type = if x.init {
-            quote!(Option<State>)
+            quote!(Option<State<'a>>)
         } else {
-            quote!(State)
+            quote!(State<'a>)
         };
         
         quote! {
-            async fn #enter_fn_name(&mut self, ctx: &mut S, id: &str, from: #from_type, data: &#shared_data_type, state_data: &#state_data_type) -> Result<(), Self::Error> {
+            async fn #enter_fn_name<'a>(&mut self, ctx: &mut S, from: #from_type, id: &str, data: &#shared_data_type, state_data: &#state_data_type) -> Result<(), Self::Error> {
                 Ok(())
             }
-            async fn #exit_fn_name(&mut self, ctx: &mut S, id: &str, to: State, data: &#shared_data_type, state_data: &#state_data_type) -> Result<(), Self::Error> {
+            async fn #exit_fn_name<'a>(&mut self, ctx: &mut S, to: State<'a>, id: &str, data: &#shared_data_type, state_data: &#state_data_type) -> Result<(), Self::Error> {
                 Ok(())
             }
+        }
+    });
+
+    let state_enum_types = state_names.iter().map(|&state_name| {
+        let state_data_type = state_data_types.get(state_name).unwrap();
+
+        quote! {
+            #state_name(&'a #state_data_type)
         }
     });
 
@@ -308,14 +314,14 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
             RetrieverError(T)
         }
         
-        pub enum State {
-            #(#state_names),*
+        pub enum State<'a> {
+            #(#state_enum_types),*
         }
 
-        impl State {
+        impl<'a> State<'a> {
             pub fn to_string(&self) -> String {
                 match self {
-                    #(State::#state_names => String::from(stringify!(#state_names))),*
+                    #(State::#state_names(_) => String::from(stringify!(#state_names))),*
                 }
             }
         }
@@ -324,11 +330,11 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
         pub trait Observer<S: Send> {
             type Error;
 
-            async fn on_init<T: Serialize + Send, U: Serialize + Send>(&mut self, ctx: &mut S, id: Option<String>, to: State, data: Option<T>, state_data: Option<U>) -> Result<Option<String>, Self::Error> {
+            async fn on_init<'a>(&mut self, ctx: &mut S, to: State<'a>, id: Option<String>, data: &#shared_data_type) -> Result<Option<String>, Self::Error> {
                 Ok(id)
             }
             
-            async fn on_transition<T: Serialize + Send, U: Serialize + Send>(&mut self, ctx: &mut S, id: &str, from: State, to: State, data: Option<T>, state_data: Option<U>) -> Result<(), Self::Error> {
+            async fn on_transition<'a>(&mut self, ctx: &mut S, from: State<'a>, to: State<'a>, id: &str, data: &#shared_data_type) -> Result<(), Self::Error> {
                 Ok(())
             }
 
@@ -339,7 +345,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
         pub trait Retriever<T: Send> {
             type Error;
 
-            async fn on_retrieve(&mut self, ctx: &mut T, id: &str) -> Result<(String, Option<Encoded>, Option<Encoded>), Self::Error>;
+            async fn on_retrieve(&mut self, ctx: &mut T, id: &str) -> Result<(String, Encoded, Encoded), Self::Error>;
         }
 
         #parent_struct
@@ -357,7 +363,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
 
         #(#restore_fns)*
 
-        pub async fn restore<S: Send, T: Observer<S> + Send>(mut observer: T, id: String, state_string: String, data: Option<Encoded>, state_data: Option<Encoded>) -> Result<#wrapped_type<S, T>, RestoreError> {
+        pub async fn restore<S: Send, T: Observer<S> + Send>(mut observer: T, id: String, state_string: String, shared_data: Encoded, state_data: Encoded) -> Result<#wrapped_type<S, T>, RestoreError> {
             let state_str: &str = &state_string;
             match state_str {
                 #(#restore_arms,)*
@@ -367,8 +373,8 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
 
         pub async fn retrieve<S: Send, T: Retriever<S> + Observer<S> + Send>(ctx: &mut S, mut retriever: T, id: String) -> Result<#wrapped_type<S, T>, RetrieveError<<T as Retriever<S>>::Error>> {
             let id_str: &str = &id;
-            let (state_string, maybe_data, maybe_state_data) = retriever.on_retrieve(ctx, id_str).await.map_err(|e| RetrieveError::RetrieverError(e))?;
-            restore(retriever, id, state_string, maybe_data, maybe_state_data).await.map_err(|e| RetrieveError::RestoreError(e))
+            let (state_string, shared_data, state_data) = retriever.on_retrieve(ctx, id_str).await.map_err(|e| RetrieveError::RetrieverError(e))?;
+            restore(retriever, id, state_string, shared_data, state_data).await.map_err(|e| RetrieveError::RestoreError(e))
         }
     };
 
