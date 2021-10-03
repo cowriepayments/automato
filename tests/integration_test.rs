@@ -1,4 +1,5 @@
 use automato_sync::statemachine;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::marker::PhantomData;
@@ -31,24 +32,18 @@ statemachine! {
 struct Log {}
 
 impl Observer<()> for Log {
+    type Data = ();
     type Error = ();
 }
 
 #[test]
 fn init() {
-    let _job = Job::init(
-        &mut (),
-        Log {},
-        Some("foo".to_string()),
-        JobData {},
-        QueuedData {},
-    )
-    .unwrap();
+    let _job = Job::init(&mut (), Log {}, Some("foo".to_string()), (), QueuedData {}).unwrap();
 }
 
 #[test]
 fn init_without_id() {
-    let result = Job::init(&mut (), Log {}, None, JobData {}, QueuedData {});
+    let result = Job::init(&mut (), Log {}, None, (), QueuedData {});
     let err = result.err().unwrap();
     match err {
         InitError::EmptyId => {}
@@ -61,28 +56,23 @@ fn init_with_deferred_id() {
     struct DeferredIdInitLog {}
 
     impl Observer<()> for DeferredIdInitLog {
+        type Data = JobData;
         type Error = ();
 
-        fn on_init<T: Serialize, U: Serialize>(
+        fn on_init<U: Serialize>(
             &mut self,
             _ctx: &mut (),
             _id: Option<String>,
             _to: State,
-            _data: Option<T>,
+            _data: &Self::Data,
             _state_data: Option<U>,
         ) -> Result<Option<String>, Self::Error> {
             Ok(Some("foo".to_string()))
         }
     }
 
-    let _job = Job::init(
-        &mut (),
-        DeferredIdInitLog {},
-        None,
-        JobData {},
-        QueuedData {},
-    )
-    .unwrap();
+    let job_data = JobData {};
+    let _job = Job::init(&mut (), DeferredIdInitLog {}, None, job_data, QueuedData {}).unwrap();
 }
 
 #[test]
@@ -92,14 +82,15 @@ fn on_init() {
     }
 
     impl Observer<()> for &mut InitLog {
+        type Data = ();
         type Error = ();
 
-        fn on_init<T: Serialize, U: Serialize>(
+        fn on_init<U: Serialize>(
             &mut self,
             _ctx: &mut (),
             id: Option<String>,
             to: State,
-            _data: Option<T>,
+            _data: &Self::Data,
             _state_data: Option<U>,
         ) -> Result<Option<String>, Self::Error> {
             self.initiated_to_state = Some(to);
@@ -115,7 +106,7 @@ fn on_init() {
         &mut (),
         &mut init_log,
         Some("foo".to_string()),
-        JobData {},
+        (),
         QueuedData {},
     )
     .unwrap();
@@ -128,14 +119,7 @@ fn on_init() {
 
 #[test]
 fn read_id() {
-    let job = Job::init(
-        &mut (),
-        Log {},
-        Some("foo".to_string()),
-        JobData {},
-        QueuedData {},
-    )
-    .unwrap();
+    let job = Job::init(&mut (), Log {}, Some("foo".to_string()), (), QueuedData {}).unwrap();
     let id = job.id();
 
     assert_eq!(id, "foo");
@@ -143,28 +127,14 @@ fn read_id() {
 
 #[test]
 fn read_data() {
-    let job = Job::init(
-        &mut (),
-        Log {},
-        Some("foo".to_string()),
-        JobData {},
-        QueuedData {},
-    )
-    .unwrap();
+    let job = Job::init(&mut (), Log {}, Some("foo".to_string()), (), QueuedData {}).unwrap();
     let _job_data = job.data();
     let _job_state_data = job.state.data();
 }
 
 #[test]
 fn transition() {
-    let job = Job::init(
-        &mut (),
-        Log {},
-        Some("foo".to_string()),
-        JobData {},
-        QueuedData {},
-    )
-    .unwrap();
+    let job = Job::init(&mut (), Log {}, Some("foo".to_string()), (), QueuedData {}).unwrap();
     let _job = job.start(&mut (), ProcessingData {}).unwrap();
 }
 
@@ -176,15 +146,16 @@ fn on_transition() {
     }
 
     impl Observer<()> for &mut TransitionLog {
+        type Data = ();
         type Error = ();
 
-        fn on_transition<T: Serialize, U: Serialize>(
+        fn on_transition<U: Serialize>(
             &mut self,
             _ctx: &mut (),
             _id: &str,
             from: State,
             to: State,
-            _data: Option<T>,
+            _data: &Self::Data,
             _state_data: Option<U>,
         ) -> Result<(), Self::Error> {
             self.from = Some(from);
@@ -202,7 +173,7 @@ fn on_transition() {
         &mut (),
         &mut transition_log,
         Some("foo".to_string()),
-        JobData {},
+        (),
         QueuedData {},
     )
     .unwrap();
