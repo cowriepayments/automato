@@ -34,6 +34,7 @@ struct Log {}
 
 #[async_trait]
 impl Observer<()> for Log {
+    type ID = String;
     type Error = ();
 }
 
@@ -65,6 +66,7 @@ fn init_with_deferred_id() {
 
     #[async_trait]
     impl Observer<()> for DeferredIdInitLog {
+        type ID = String;
         type Error = ();
 
         async fn on_init<'a>(
@@ -96,6 +98,7 @@ fn on_init() {
 
     #[async_trait]
     impl Observer<()> for &mut InitLog {
+        type ID = String;
         type Error = ();
 
         async fn on_init<'a>(
@@ -180,6 +183,7 @@ fn on_transition() {
 
     #[async_trait]
     impl Observer<()> for &mut TransitionLog {
+        type ID = String;
         type Error = ();
 
         async fn on_transition<'a>(
@@ -187,7 +191,7 @@ fn on_transition() {
             _ctx: &mut (),
             from: State<'a>,
             to: State<'a>,
-            _id: &str,
+            _id: &String,
             _data: &JobData,
         ) -> Result<(), Self::Error> {
             self.from = Some(from.to_string());
