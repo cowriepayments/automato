@@ -180,14 +180,14 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
         let enter_fn_name = format_ident!("{}_{}", "on_enter", state_name.to_string().to_case(Case::Snake));
 
         let common_methods = quote! {
-            pub fn id(&self) -> &str {
+            pub fn id(&self) -> &T::ID {
                 &self.id
             }
         };
 
         let constructor = quote! {
             impl<S: Send, T: Observer<S> + Send> #parent_name<#state_name, S, T> {
-                fn new(observer: T, id: String, state: #state_name, data: #shared_data_type) -> Self {
+                fn new(observer: T, id: T::ID, state: #state_name, data: #shared_data_type) -> Self {
                     Self {
                         observer,
                         id,
@@ -211,7 +211,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                 #constructor
 
                 impl<S: Send, T: Observer<S> + Send> #parent_name<#state_name, S, T> {
-                    pub async fn init(ctx: &mut S, mut observer: T, id: Option<String>, shared_data: #shared_data_type, state_data: #state_data_type) -> Result<Self, InitError<T::Error>> {
+                    pub async fn init(ctx: &mut S, mut observer: T, id: Option<T::ID>, shared_data: #shared_data_type, state_data: #state_data_type) -> Result<Self, InitError<T::Error>> {
                         let id = observer.on_init(ctx, State::#state_name(&state_data), id, &shared_data).await.map_err(|e| InitError::ObserverError(e))?.ok_or(InitError::EmptyId)?;
                         observer.#enter_fn_name(ctx, None, &id, &shared_data, &state_data).await.map_err(|e| InitError::ObserverError(e))?;
                         Ok(Self::new(observer, id, #state_name::new(state_data), shared_data))
@@ -224,7 +224,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
     let parent_struct = quote! {
         pub struct #parent_name<S, T: Send, U: Observer<T> + Send> {
             observer: U,
-            id: String,
+            id: U::ID,
             pub state: S,
             data: #shared_data_type,
             phantom: PhantomData<T>
@@ -238,7 +238,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
         let fn_name = format_ident!("{}_{}", "restore", state_name.to_string().to_case(Case::Snake));
 
         quote! {
-            async fn #fn_name<S: Send, T: Observer<S> + Send>(mut observer: T, id: String, shared_d_enc: Encoded, state_d_enc: Encoded) -> Result<#wrapped_type<S, T>, RestoreError> {
+            async fn #fn_name<S: Send, T: Observer<S> + Send>(mut observer: T, id: T::ID, shared_d_enc: Encoded, state_d_enc: Encoded) -> Result<#wrapped_type<S, T>, RestoreError> {
                 let shared_d: #shared_data_type = match shared_d_enc {
                     Encoded::Json(data) => serde_json::from_value(data).ok().ok_or(RestoreError::InvalidData)?
                 };
@@ -271,10 +271,10 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
         };
         
         quote! {
-            async fn #enter_fn_name<'a>(&mut self, ctx: &mut S, from: #from_type, id: &str, data: &#shared_data_type, state_data: &#state_data_type) -> Result<(), Self::Error> {
+            async fn #enter_fn_name<'a>(&mut self, ctx: &mut S, from: #from_type, id: &Self::ID, data: &#shared_data_type, state_data: &#state_data_type) -> Result<(), Self::Error> {
                 Ok(())
             }
-            async fn #exit_fn_name<'a>(&mut self, ctx: &mut S, to: State<'a>, id: &str, data: &#shared_data_type, state_data: &#state_data_type) -> Result<(), Self::Error> {
+            async fn #exit_fn_name<'a>(&mut self, ctx: &mut S, to: State<'a>, id: &Self::ID, data: &#shared_data_type, state_data: &#state_data_type) -> Result<(), Self::Error> {
                 Ok(())
             }
         }
@@ -328,13 +328,14 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
         
         #[async_trait]
         pub trait Observer<S: Send> {
+            type ID: Send + Sync;
             type Error;
 
-            async fn on_init<'a>(&mut self, ctx: &mut S, to: State<'a>, id: Option<String>, data: &#shared_data_type) -> Result<Option<String>, Self::Error> {
+            async fn on_init<'a>(&mut self, ctx: &mut S, to: State<'a>, id: Option<Self::ID>, data: &#shared_data_type) -> Result<Option<Self::ID>, Self::Error> {
                 Ok(id)
             }
             
-            async fn on_transition<'a>(&mut self, ctx: &mut S, from: State<'a>, to: State<'a>, id: &str, data: &#shared_data_type) -> Result<(), Self::Error> {
+            async fn on_transition<'a>(&mut self, ctx: &mut S, from: State<'a>, to: State<'a>, id: &Self::ID, data: &#shared_data_type) -> Result<(), Self::Error> {
                 Ok(())
             }
 
@@ -342,10 +343,10 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
         }
 
         #[async_trait]
-        pub trait Retriever<T: Send> {
+        pub trait Retriever<T: Send, U: Observer<T> + Send> {
             type Error;
 
-            async fn on_retrieve(&mut self, ctx: &mut T, id: &str) -> Result<(String, Encoded, Encoded), Self::Error>;
+            async fn on_retrieve(&mut self, ctx: &mut T, id: &U::ID) -> Result<(String, Encoded, Encoded), Self::Error>;
         }
 
         #parent_struct
@@ -363,7 +364,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
 
         #(#restore_fns)*
 
-        pub async fn restore<S: Send, T: Observer<S> + Send>(mut observer: T, id: String, state_string: String, shared_data: Encoded, state_data: Encoded) -> Result<#wrapped_type<S, T>, RestoreError> {
+        pub async fn restore<S: Send, T: Observer<S> + Send>(mut observer: T, id: T::ID, state_string: String, shared_data: Encoded, state_data: Encoded) -> Result<#wrapped_type<S, T>, RestoreError> {
             let state_str: &str = &state_string;
             match state_str {
                 #(#restore_arms,)*
@@ -371,9 +372,8 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
             }
         }
 
-        pub async fn retrieve<S: Send, T: Retriever<S> + Observer<S> + Send>(ctx: &mut S, mut retriever: T, id: String) -> Result<#wrapped_type<S, T>, RetrieveError<<T as Retriever<S>>::Error>> {
-            let id_str: &str = &id;
-            let (state_string, shared_data, state_data) = retriever.on_retrieve(ctx, id_str).await.map_err(|e| RetrieveError::RetrieverError(e))?;
+        pub async fn retrieve<S: Send, T: Observer<S> + Retriever<S, T> + Send>(ctx: &mut S, mut retriever: T, id: T::ID) -> Result<#wrapped_type<S, T>, RetrieveError<<T as Retriever<S, T>>::Error>> {
+            let (state_string, shared_data, state_data) = retriever.on_retrieve(ctx, &id).await.map_err(|e| RetrieveError::RetrieverError(e))?;
             restore(retriever, id, state_string, shared_data, state_data).await.map_err(|e| RetrieveError::RestoreError(e))
         }
     };
