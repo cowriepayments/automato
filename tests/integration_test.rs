@@ -38,6 +38,19 @@ impl Observer<()> for Log {
     type Error = ();
 }
 
+#[async_trait]
+impl Retriever<(), Log> for Log {
+    type Error = ();
+
+    async fn on_retrieve(
+        &mut self,
+        _ctx: &mut (),
+        _id: &String,
+    ) -> Result<(String, Encoded, Encoded), Self::Error> {
+        Err(())
+    }
+}
+
 #[test]
 fn init() {
     let _job = block_on(Job::init(

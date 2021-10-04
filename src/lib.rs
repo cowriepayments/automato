@@ -93,9 +93,9 @@ impl Parse for StateTransition {
 #[proc_macro]
 pub fn statemachine(input: TokenStream) -> TokenStream {
     let m = parse_macro_input!(input as Machine);
-
     let mut init_states = HashSet::new();
     let mut state_data_types = HashMap::new();
+    
     for state in m.states.iter() {
         if state.init {
             init_states.insert(&state.name);
@@ -107,7 +107,6 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
     }
 
     let state_names: Vec<&Ident> = m.states.iter().map(|x| &x.name).collect();
-
     let parent_name = &m.name;
     let wrapped_type = format_ident!("{}{}", "Wrapped", parent_name);
     let shared_data_type = m.shared_data_type.or(Some(Type::Verbatim(quote!(())))).unwrap();
@@ -145,10 +144,6 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
             let next_state_data_type = state_data_types.get(next_state_name).unwrap();
             let enter_fn_name = format_ident!("{}_{}", "on_enter", next_state_name.to_string().to_case(Case::Snake));
 
-            let exit_call = quote! {
-                self.observer.#exit_fn_name(ctx, State::#next_state_name(&next_state_data), &self.id, &self.data, &self.state.data).await.map_err(|e| TransitionError::ObserverError(e))?;
-            };
-
             let enter_from_value = if init_states.contains(next_state_name) {
                 quote!(Some(State::#state_name(self.state.data())))
             } else {
@@ -159,7 +154,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                 impl<S: Send, T: Observer<S> + Send> #parent_name<#state_name, S, T> {
                     pub async fn #event(mut self, ctx: &mut S, next_state_data: #next_state_data_type) -> Result<#parent_name<#next_state_name, S, T>, TransitionError<T::Error>> {
                         self.observer.on_transition(ctx, State::#state_name(self.state.data()), State::#next_state_name(&next_state_data), &self.id, &self.data).await.map_err(|e| TransitionError::ObserverError(e))?;
-                        #exit_call
+                        self.observer.#exit_fn_name(ctx, State::#next_state_name(&next_state_data), &self.id, &self.data, &self.state.data).await.map_err(|e| TransitionError::ObserverError(e))?;
                         self.observer.#enter_fn_name(ctx, #enter_from_value, &self.id, &self.data, &next_state_data).await.map_err(|e| TransitionError::ObserverError(e))?;
                         Ok(#parent_name::<#next_state_name, S, T>::new(self.observer, self.id, #next_state_name::new(next_state_data), self.data))
                     }
@@ -179,12 +174,6 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
         let state_data_type = state_data_types.get(state_name).unwrap();
         let enter_fn_name = format_ident!("{}_{}", "on_enter", state_name.to_string().to_case(Case::Snake));
 
-        let common_methods = quote! {
-            pub fn id(&self) -> &T::ID {
-                &self.id
-            }
-        };
-
         let constructor = quote! {
             impl<S: Send, T: Observer<S> + Send> #parent_name<#state_name, S, T> {
                 fn new(observer: T, id: T::ID, state: #state_name, data: #shared_data_type) -> Self {
@@ -197,11 +186,13 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                     }
                 }
 
+                pub fn id(&self) -> &T::ID {
+                    &self.id
+                }
+
                 pub fn data(&self) -> &#shared_data_type {
                     &self.data
                 }
-
-                #common_methods
             }
         };
 
@@ -234,7 +225,6 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
     let restore_fns = m.states.iter().map(|x| {
         let state_name = &x.name;
         let state_data_type = state_data_types.get(state_name).unwrap();
-
         let fn_name = format_ident!("{}_{}", "restore", state_name.to_string().to_case(Case::Snake));
 
         quote! {
@@ -255,6 +245,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
     let restore_arms = m.states.iter().map(|x| {
         let state_name = &x.name;
         let fn_name = format_ident!("{}_{}", "restore", state_name.to_string().to_case(Case::Snake));
+        
         quote!(stringify!(#state_name) => #fn_name(observer, id, shared_data, state_data).await)
     });
 
@@ -324,6 +315,12 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
                     #(State::#state_names(_) => String::from(stringify!(#state_names))),*
                 }
             }
+
+            pub fn data_as_json(&self) -> Result<serde_json::Value, serde_json::Error> {
+                match self {
+                    #(State::#state_names(data) => serde_json::to_value(data)),*
+                }
+            }
         }
         
         #[async_trait]
@@ -366,6 +363,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
 
         pub async fn restore<S: Send, T: Observer<S> + Send>(mut observer: T, id: T::ID, state_string: String, shared_data: Encoded, state_data: Encoded) -> Result<#wrapped_type<S, T>, RestoreError> {
             let state_str: &str = &state_string;
+            
             match state_str {
                 #(#restore_arms,)*
                 _ => Err(RestoreError::InvalidState)
@@ -374,6 +372,7 @@ pub fn statemachine(input: TokenStream) -> TokenStream {
 
         pub async fn retrieve<S: Send, T: Observer<S> + Retriever<S, T> + Send>(ctx: &mut S, mut retriever: T, id: T::ID) -> Result<#wrapped_type<S, T>, RetrieveError<<T as Retriever<S, T>>::Error>> {
             let (state_string, shared_data, state_data) = retriever.on_retrieve(ctx, &id).await.map_err(|e| RetrieveError::RetrieverError(e))?;
+            
             restore(retriever, id, state_string, shared_data, state_data).await.map_err(|e| RetrieveError::RestoreError(e))
         }
     };
