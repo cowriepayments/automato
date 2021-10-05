@@ -47,8 +47,28 @@ impl Retriever<(), Log> for Log {
         _ctx: &mut (),
         _id: &String,
     ) -> Result<(String, Encoded, Encoded), Self::Error> {
-        Err(())
+        // return dummy item in the queued state
+        Ok((
+            "Queued".to_string(),
+            Encoded::Json(serde_json::to_value(JobData {}).unwrap()),
+            Encoded::Json(serde_json::to_value(QueuedData {}).unwrap()),
+        ))
     }
+}
+
+#[test]
+fn retriever() {
+    let mut ctx = ();
+    let wrapped_job = block_on(retrieve(&mut ctx, Log {}, "123123".to_string())).unwrap();
+    match wrapped_job {
+        WrappedJob::Queued(job) => {
+            block_on(job.start(&mut ctx, ProcessingData {})).unwrap();
+        }
+        WrappedJob::Processing(job) => {
+            block_on(job.complete(&mut ctx, CompletedData {})).unwrap();
+        }
+        WrappedJob::Completed(_) => (),
+    };
 }
 
 #[test]
